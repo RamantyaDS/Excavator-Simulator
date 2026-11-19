@@ -218,33 +218,79 @@ function Signs() {
   );
 }
 
+/** Trees around the edge: trunk and several leafy crowns each, leaf texture with alpha. */
 function Trees() {
-  const ref = useRef<THREE.InstancedMesh>(null);
+  const trunks = useRef<THREE.InstancedMesh>(null);
+  const crowns = useRef<THREE.InstancedMesh>(null);
+  const leaf = useMemo(() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, 256, 256);
+    const cols = ['#2f5a24', '#3c6b2a', '#4a7a30', '#28501f', '#5a8a38'];
+    for (let i = 0; i < 1400; i++) {
+      const x = Math.random() * 256;
+      const y = Math.random() * 256;
+      g.fillStyle = cols[(Math.random() * cols.length) | 0];
+      g.beginPath();
+      g.ellipse(x, y, 5 + Math.random() * 5, 2.5 + Math.random() * 2, Math.random() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, []);
+  const crownGeo = useMemo(() => {
+    const g = new THREE.IcosahedronGeometry(1, 2);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(p, i);
+      const k = 0.8 + 0.35 * Math.sin(v.x * 5.1 + v.y * 3.3) * Math.cos(v.z * 4.7);
+      v.multiplyScalar(k);
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, []);
   const pts = useMemo(() => {
-    const out: [number, number][] = [];
-    for (let i = 0; i < 70; i++) {
-      const a = (i / 70) * Math.PI * 2;
-      const r = 90 + ((i * 37) % 30);
-      out.push([Math.cos(a) * r, Math.sin(a) * r]);
+    const out: [number, number, number][] = [];
+    for (let i = 0; i < 90; i++) {
+      const a = (i / 90) * Math.PI * 2 + Math.sin(i * 7.3) * 0.03;
+      const r = 88 + ((i * 37) % 34);
+      out.push([Math.cos(a) * r, Math.sin(a) * r, 0.8 + ((i * 13) % 7) / 10]);
     }
     return out;
   }, []);
+  const PER = 4;
   useFrame(() => {
-    if (ref.current!.userData.done) return;
+    if (trunks.current!.userData.done) return;
     const m = new THREE.Matrix4();
-    pts.forEach(([x, z], i) => {
-      const s = 0.8 + ((i * 13) % 7) / 10;
-      m.compose(new THREE.Vector3(x, 3.5 * s - 0.6, z), new THREE.Quaternion(), new THREE.Vector3(s, s, s));
-      ref.current!.setMatrixAt(i, m);
+    const q = new THREE.Quaternion();
+    pts.forEach(([x, z, s], i) => {
+      m.compose(new THREE.Vector3(x, 3 * s - 0.6, z), q, new THREE.Vector3(s, s, s));
+      trunks.current!.setMatrixAt(i, m);
+      for (let k = 0; k < PER; k++) {
+        const a = k * 2.1 + i;
+        const r = k === 0 ? 0 : 1.6 * s;
+        const cs = (k === 0 ? 3.2 : 2.3) * s;
+        m.compose(new THREE.Vector3(x + Math.cos(a) * r, (k === 0 ? 7.2 : 5.6 + k * 0.5) * s - 0.6, z + Math.sin(a) * r), q.setFromEuler(new THREE.Euler(a, a * 0.7, 0)), new THREE.Vector3(cs, cs * 0.85, cs));
+        crowns.current!.setMatrixAt(i * PER + k, m);
+      }
     });
-    ref.current!.instanceMatrix.needsUpdate = true;
-    ref.current!.userData.done = true;
+    trunks.current!.instanceMatrix.needsUpdate = true;
+    crowns.current!.instanceMatrix.needsUpdate = true;
+    trunks.current!.userData.done = true;
   });
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, pts.length]} castShadow>
-      <icosahedronGeometry args={[3.2, 0]} />
-      <meshStandardMaterial color="#3e6a32" roughness={0.9} flatShading />
-    </instancedMesh>
+    <>
+      <instancedMesh ref={trunks} args={[undefined, undefined, pts.length]} castShadow>
+        <cylinderGeometry args={[0.22, 0.38, 6, 7]} />
+        <meshStandardMaterial color="#4f3d2a" roughness={0.95} />
+      </instancedMesh>
+      <instancedMesh ref={crowns} args={[crownGeo, undefined, pts.length * PER]} castShadow>
+        <meshStandardMaterial map={leaf} color="#9fb48a" roughness={0.85} />
+      </instancedMesh>
+    </>
   );
 }
 

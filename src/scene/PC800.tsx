@@ -15,6 +15,7 @@ import { SOIL } from '../sim/terrain';
 import { ex } from '../store';
 import { Bake } from './Bake';
 import { Box, Cyl, M, Pipe, useCanvasTexture } from './parts';
+import { weather } from './weather';
 
 export const K = {
   yellow: new THREE.MeshStandardMaterial({ color: '#f2b51b', metalness: 0.25, roughness: 0.38 }),
@@ -30,6 +31,14 @@ export const K = {
   blue: new THREE.MeshStandardMaterial({ color: '#1d3f8f', metalness: 0.3, roughness: 0.4 }),
   load: new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 1 }),
 };
+
+weather(K.yellow, { dirt: 0.14, mudBelow: 1.9, mud: 0.6, chips: 0.18, scale: 0.9 });
+weather(K.yellowDark, { dirt: 0.2, mudBelow: 1.9, mud: 0.6, chips: 0.2, scale: 0.9 });
+weather(K.black, { dirt: 0.35, mudBelow: 1.6, mud: 0.6, chips: 0.1, dirtColor: '#4d4031' });
+weather(K.under, { dirt: 0.35, mudBelow: 1.3, mud: 0.8, chips: 0, rust: 0.06, dirtColor: '#4a3b2a' });
+weather(K.shoe, { dirt: 0.45, mudBelow: 1.4, mud: 0.8, chips: 0, rust: 0.12, scale: 3, dirtColor: '#4f3f2c' });
+weather(K.steel, { dirt: 0.4, mudBelow: 1.2, mud: 0.8, rust: 0.35, chips: 0 });
+weather(K.worn, { dirt: 0.55, mudBelow: 99, mud: 0.4, rust: 0.7, chips: 0.1, scale: 2.2, dirtColor: '#5a4632' });
 
 /** Registered so the camera and the lights can follow the parts. */
 export const excObj: { carrier: THREE.Object3D | null; upper: THREE.Object3D | null; arm: THREE.Object3D | null; bucket: THREE.Object3D | null } = {
@@ -99,7 +108,17 @@ function Track({ side }: { side: number }) {
   const n = SPEC.shoesPerSide;
   const geo = useMemo(() => {
     // shoe plate with two grousers
-    const parts = [new THREE.BoxGeometry(0.61, 0.045, 0.24), new THREE.BoxGeometry(0.61, 0.05, 0.035).translate(0, -0.045, -0.06), new THREE.BoxGeometry(0.61, 0.05, 0.035).translate(0, -0.045, 0.06)];
+    const parts = [
+      new THREE.BoxGeometry(0.61, 0.045, 0.24),
+      new THREE.BoxGeometry(0.61, 0.055, 0.035).translate(0, -0.047, -0.065),
+      new THREE.BoxGeometry(0.61, 0.045, 0.03).translate(0, -0.042, 0.055),
+      // links (the chain the rollers run on) and the pin bosses
+      new THREE.BoxGeometry(0.07, 0.11, 0.26).translate(-0.15, 0.075, 0),
+      new THREE.BoxGeometry(0.07, 0.11, 0.26).translate(0.15, 0.075, 0),
+      new THREE.CylinderGeometry(0.045, 0.045, 0.42, 8).rotateZ(Math.PI / 2).translate(0, 0.08, 0.12),
+      // bolt heads
+      ...[-0.22, -0.08, 0.08, 0.22].map((x) => new THREE.BoxGeometry(0.035, 0.02, 0.035).translate(x, 0.03, 0.04)),
+    ];
     const g = new THREE.BufferGeometry();
     const merged = mergeBoxes(parts);
     g.copy(merged);
@@ -153,9 +172,30 @@ function TrackFrame() {
       ))}
       {/* idler (front) with the hydraulic adjuster */}
       <Cyl r={TR.R - 0.08} l={0.42} axis="x" m={K.under} position={[0, TR.yC, TR.half]} seg={24} />
+      {[-0.17, 0.17].map((x) => (
+        <Cyl key={x} r={TR.R - 0.03} l={0.06} axis="x" m={K.steel} position={[x, TR.yC, TR.half]} seg={28} />
+      ))}
+      {/* track adjuster cover and the frame's side plates with lightening holes */}
+      <Box s={[0.4, 0.3, 0.9]} m={K.under} position={[0, TR.yC + 0.05, TR.half - 0.75]} />
+      {[-0.26, 0.26].map((x) => (
+        <group key={x}>
+          <Box s={[0.02, 0.5, SPEC.tumbler - 0.6]} m={K.under} position={[x, 0.66, 0]} />
+          {[-1.2, 0, 1.2].map((z) => (
+            <Cyl key={z} r={0.12} l={0.03} axis="x" m={K.black} position={[x * 1.05, 0.68, z]} seg={14} />
+          ))}
+        </group>
+      ))}
       <Cyl r={0.2} l={0.48} axis="x" m={K.steel} position={[0, TR.yC, TR.half]} seg={16} />
       {/* sprocket and travel motor (rear) with its guard */}
-      <Cyl r={TR.R - 0.04} l={0.18} axis="x" m={K.steel} position={[0, TR.yC, -TR.half]} seg={13} />
+      <Cyl r={TR.R - 0.1} l={0.16} axis="x" m={K.steel} position={[0, TR.yC, -TR.half]} seg={26} />
+      {Array.from({ length: 13 }, (_, i) => {
+        const a = (i / 13) * Math.PI * 2;
+        return <Box key={i} s={[0.12, 0.13, 0.11]} m={K.steel} position={[0, TR.yC + Math.cos(a) * (TR.R - 0.06), -TR.half + Math.sin(a) * (TR.R - 0.06)]} rotation={[-a, 0, 0]} />;
+      })}
+      {Array.from({ length: 10 }, (_, i) => {
+        const a = (i / 10) * Math.PI * 2;
+        return <Cyl key={'b' + i} r={0.025} l={0.2} axis="x" seg={6} m={K.black} position={[0, TR.yC + Math.cos(a) * 0.3, -TR.half + Math.sin(a) * 0.3]} />;
+      })}
       <Cyl r={0.42} l={0.5} axis="x" m={K.under} position={[0.38, TR.yC, -TR.half]} seg={20} />
       <Box s={[0.08, 0.7, 0.9]} m={K.black} position={[0.66, TR.yC, -TR.half]} />
     </group>
@@ -202,6 +242,46 @@ function useGrille() {
   });
 }
 
+/** Engine-room door: painted panel with a block of pressed louvres. */
+function useLouvreDoor() {
+  return useCanvasTexture(256, 256, (g) => {
+    g.fillStyle = '#e8ad18';
+    g.fillRect(0, 0, 256, 256);
+    for (let y = 40; y < 200; y += 12) {
+      g.fillStyle = '#5a4208';
+      g.fillRect(40, y, 176, 6);
+      g.fillStyle = '#ffd35a';
+      g.fillRect(40, y + 6, 176, 2);
+    }
+    g.strokeStyle = '#7a5a0c';
+    g.lineWidth = 3;
+    g.strokeRect(4, 4, 248, 248);
+  });
+}
+function useCaution() {
+  return useCanvasTexture(128, 128, (g) => {
+    g.fillStyle = '#ffd400';
+    g.fillRect(0, 0, 128, 128);
+    g.fillStyle = '#111';
+    g.beginPath();
+    g.moveTo(64, 12);
+    g.lineTo(118, 108);
+    g.lineTo(10, 108);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#ffd400';
+    g.beginPath();
+    g.moveTo(64, 30);
+    g.lineTo(104, 100);
+    g.lineTo(24, 100);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#111';
+    g.fillRect(59, 50, 10, 30);
+    g.fillRect(59, 86, 10, 9);
+  });
+}
+
 function Decal() {
   // the PC800 decal: black panel, blue stripes, PC in yellow and 800 in white (right side, rear)
   const tex = useCanvasTexture(512, 300, (g) => {
@@ -230,6 +310,10 @@ function Rail({ pts }: { pts: [number, number, number][] }) {
 function Upper() {
   const grille = useGrille();
   const grilleMat = useMemo(() => new THREE.MeshStandardMaterial({ map: grille, metalness: 0.5, roughness: 0.6 }), [grille]);
+  const louvre = useLouvreDoor();
+  const doorMat = useMemo(() => weather(new THREE.MeshStandardMaterial({ map: louvre, metalness: 0.25, roughness: 0.45 }), { dirt: 0.3, mudBelow: 2.6, mud: 0.5, chips: 0.25 }), [louvre]);
+  const caution = useCaution();
+  const cautionMat = useMemo(() => new THREE.MeshStandardMaterial({ map: caution, roughness: 0.5 }), [caution]);
   const Y0 = SPEC.ringY;
   return (
     <group>
@@ -242,12 +326,45 @@ function Upper() {
         {/* engine hood: full width behind the cab and tool box */}
         <Box s={[3.62, 1.55, 2.75]} r={0.06} m={K.yellow} position={[0, Y0 + 1.15, -1.9]} />
         <Box s={[3.3, 0.06, 2.3]} m={K.yellowDark} position={[0, Y0 + 1.95, -1.9]} />
-        {/* engine room doors and their handles (right side) */}
-        {[-2.8, -1.65, -0.6].map((z) => (
+        {/* engine room doors (right side): louvred panels, hinges, latches */}
+        {[-2.75, -1.7, -0.65].map((z) => (
           <group key={z}>
-            <Box s={[0.02, 1.15, 0.02]} m={K.black} position={[-1.82, Y0 + 1.1, z - 0.55]} />
-            <Box s={[0.04, 0.05, 0.16]} m={K.black} position={[-1.83, Y0 + 1.4, z]} />
+            <mesh position={[-1.815, Y0 + 1.15, z]} rotation={[0, -Math.PI / 2, 0]} material={doorMat}>
+              <planeGeometry args={[1.0, 1.25]} />
+            </mesh>
+            {[0.75, 1.55].map((y) => (
+              <Box key={y} s={[0.05, 0.12, 0.06]} m={K.black} position={[-1.83, Y0 + y, z - 0.5]} />
+            ))}
+            <Box s={[0.05, 0.06, 0.14]} m={K.black} position={[-1.84, Y0 + 1.2, z + 0.38]} />
           </group>
+        ))}
+        {/* same louvres on the left behind the radiator grille, the pump room door */}
+        <mesh position={[1.815, Y0 + 1.15, -2.95]} rotation={[0, Math.PI / 2, 0]} material={doorMat}>
+          <planeGeometry args={[0.8, 1.25]} />
+        </mesh>
+        {/* hood seams, lifting eyes on the counterweight, caution stickers */}
+        {[-2.7, -1.1].map((z) => (
+          <Box key={z} s={[3.4, 0.015, 0.02]} m={K.black} position={[0, Y0 + 1.99, z]} />
+        ))}
+        {[-1.2, 1.2].map((x) => (
+          <group key={x} position={[x, Y0 + 1.62, -3.8]}>
+            <mesh rotation={[0, Math.PI / 2, 0]} material={K.black}>
+              <torusGeometry args={[0.11, 0.035, 8, 14]} />
+            </mesh>
+          </group>
+        ))}
+        {[
+          [1.815, Y0 + 0.9, -3.75, Math.PI / 2],
+          [-1.815, Y0 + 0.9, -3.75, -Math.PI / 2],
+          [-1.215, Y0 + 1.4, 1.81, 0],
+        ].map(([x, y, z, r], i) => (
+          <mesh key={i} position={[x, y, z]} rotation={[0, r, 0]} material={cautionMat}>
+            <planeGeometry args={[0.28, 0.28]} />
+          </mesh>
+        ))}
+        {/* grab handles by the steps */}
+        {[0.8, 1.6].map((y) => (
+          <Cyl key={y} r={0.02} l={0.5} m={K.yellow} position={[-1.88, Y0 + y, 1.82]} />
         ))}
         {/* radiator grille behind the cab (left side) */}
         <mesh position={[1.82, Y0 + 1.15, -1.55]} rotation={[0, Math.PI / 2, 0]} material={grilleMat}>
@@ -273,37 +390,64 @@ function Upper() {
         {[-0.62, 0.62].map((d) => (
           <Box key={d} s={[0.12, 0.7, 0.8]} m={K.yellowDark} position={[SPEC.boomFoot.x + d, Y0 + 0.65, 1.55]} />
         ))}
-        {/* cab: high mount, yellow frame, big glass, front guard */}
+        {/* cab: high mount, black pillars, big tinted glass all round, yellow roof and lower panels, front guard */}
         <group position={[1.15, Y0 + 0.5, 0.75]}>
           <Box s={[1.15, 0.3, 2.2]} m={K.black} position={[0, -0.05, 0]} />
-          <Box s={[1.1, 1.95, 2.0]} r={0.08} m={K.yellow} position={[0, 1.08, -0.08]} />
-          <mesh position={[0, 1.15, 0.94]} rotation={[-0.08, 0, 0]} material={K.glass}>
-            <boxGeometry args={[0.96, 1.75, 0.03]} />
+          <Box s={[1.12, 0.35, 2.02]} r={0.04} m={K.yellow} position={[0, 0.28, -0.08]} />
+          <Box s={[1.14, 0.22, 2.06]} r={0.06} m={K.yellow} position={[0, 2.02, -0.08]} />
+          <Box s={[1.1, 1.65, 0.5]} r={0.03} m={K.yellow} position={[0, 1.2, -0.86]} />
+          {/* pillars */}
+          {[
+            [0.54, 0.92],
+            [-0.54, 0.92],
+            [0.54, -0.1],
+            [-0.54, -0.1],
+          ].map(([x, z]) => (
+            <Box key={`${x}${z}`} s={[0.07, 1.62, 0.07]} m={K.black} position={[x, 1.2, z]} rotation={[z > 0.5 ? -0.08 : 0, 0, 0]} />
+          ))}
+          {/* glass: front, both sides, roof window */}
+          <mesh position={[0, 1.2, 0.94]} rotation={[-0.08, 0, 0]} material={K.glass}>
+            <boxGeometry args={[1.02, 1.6, 0.025]} />
           </mesh>
-          {[-1, 1].map((s) => (
-            <mesh key={s} position={[s * 0.56, 1.2, -0.05]} material={K.glass}>
-              <boxGeometry args={[0.02, 1.4, 1.75]} />
+          {[-1, 1].map((k) => (
+            <mesh key={k} position={[k * 0.555, 1.2, 0.18]} material={K.glass}>
+              <boxGeometry args={[0.02, 1.55, 1.5]} />
             </mesh>
           ))}
-          <Box s={[1.16, 0.08, 2.06]} m={K.black} position={[0, 2.08, -0.08]} />
-          {/* front guard (ISO 10262): frame and vertical bars */}
-          <Box s={[1.1, 0.06, 0.06]} m={K.black} position={[0, 2.0, 1.12]} />
-          <Box s={[1.1, 0.06, 0.06]} m={K.black} position={[0, 0.25, 1.12]} />
-          {[-0.52, -0.26, 0, 0.26, 0.52].map((x) => (
-            <Box key={x} s={[0.04, 1.8, 0.04]} m={K.black} position={[x, 1.12, 1.13]} />
+          <mesh position={[0, 2.135, 0.2]} material={K.glass}>
+            <boxGeometry args={[0.8, 0.02, 0.9]} />
+          </mesh>
+          {/* door frame (left), handle, rain visor, sun visor */}
+          <Box s={[0.03, 1.6, 0.04]} m={K.black} position={[0.57, 1.2, 0.4]} />
+          <Box s={[0.04, 0.05, 0.16]} m={K.black} position={[0.585, 1.05, 0.25]} />
+          <Box s={[1.1, 0.04, 0.25]} m={K.black} position={[0, 2.1, 1.05]} rotation={[0.25, 0, 0]} />
+          {/* front guard (ISO 10262 level 2): frame and vertical bars */}
+          <Box s={[1.12, 0.07, 0.07]} m={K.black} position={[0, 2.0, 1.15]} />
+          <Box s={[1.12, 0.07, 0.07]} m={K.black} position={[0, 0.3, 1.15]} />
+          {[-0.54, 0.54].map((x) => (
+            <Box key={x} s={[0.07, 1.8, 0.07]} m={K.black} position={[x, 1.15, 1.15]} />
           ))}
-          {/* wiper, door handle, steps below */}
-          <Box s={[0.02, 0.8, 0.02]} m={K.black} position={[0.2, 1.0, 0.98]} rotation={[0, 0, 0.5]} />
-          <Box s={[0.04, 0.05, 0.14]} m={K.black} position={[0.57, 1.0, -0.6]} />
+          {[-0.27, 0, 0.27].map((x) => (
+            <Box key={x} s={[0.035, 1.7, 0.035]} m={K.black} position={[x, 1.15, 1.16]} />
+          ))}
+          {/* wiper parked on the left pillar */}
+          <Box s={[0.02, 0.85, 0.02]} m={K.black} position={[0.42, 1.0, 0.99]} rotation={[0, 0, 0.12]} />
+          {/* steps below the door */}
           {[-0.2, -0.75, -1.3].map((y) => (
             <Box key={y} s={[0.35, 0.04, 0.3]} m={M.checker} position={[0.5, y, 0.95]} />
           ))}
-          {/* seat and levers seen through the glass */}
-          <Box s={[0.5, 0.55, 0.55]} r={0.06} m={M.seat} position={[0, 0.75, -0.3]} />
-          <Box s={[0.5, 0.8, 0.14]} r={0.05} m={M.seat} position={[0, 1.2, -0.62]} />
-          {[-0.33, 0.33].map((x) => (
-            <Cyl key={x} r={0.025} l={0.25} m={K.black} position={[x, 0.95, -0.05]} />
+          {/* inside: seat, consoles with the joysticks, the colour monitor */}
+          <Box s={[0.5, 0.55, 0.55]} r={0.06} m={M.seat} position={[0, 0.75, -0.25]} />
+          <Box s={[0.5, 0.85, 0.14]} r={0.05} m={M.seat} position={[0, 1.25, -0.58]} />
+          {[-0.36, 0.36].map((x) => (
+            <group key={x}>
+              <Box s={[0.18, 0.35, 0.6]} m={K.black} position={[x, 0.68, -0.15]} />
+              <Cyl r={0.025} l={0.22} m={K.black} position={[x, 0.95, 0.0]} />
+            </group>
           ))}
+          <Box s={[0.26, 0.2, 0.05]} m={M.dash} position={[0.35, 1.2, 0.7]} rotation={[-0.4, -0.3, 0]} />
+          <Cyl r={0.025} l={0.6} m={K.black} position={[-0.12, 0.75, 0.55]} rotation={[0.4, 0, 0]} />
+          <Cyl r={0.025} l={0.6} m={K.black} position={[0.12, 0.75, 0.55]} rotation={[0.4, 0, 0]} />
         </group>
         {/* mirrors: one on the cab, one on the right handrail */}
         <Cyl r={0.018} l={0.7} m={K.black} position={[1.75, Y0 + 2.2, 1.6]} />
@@ -552,7 +696,9 @@ function Equipment() {
           {/* foot pin boss, cylinder lugs, arm cylinder bracket on top, the head pin boss */}
           <Cyl r={0.42} l={1.25} axis="x" m={K.yellowDark} position={[0, 0, 0]} />
           <Cyl r={0.36} l={1.1} axis="x" m={K.yellowDark} position={[0, 0, 8.2]} />
-          <Box s={[1.5, 0.35, 0.5]} m={K.yellowDark} position={[0, 0.05, BOOM_CYL_END[0]]} />
+          {[-0.6, 0.6].map((x) => (
+            <Box key={x} s={[0.22, 0.42, 0.55]} m={K.yellowDark} position={[x, 0.02, BOOM_CYL_END[0]]} />
+          ))}
           <Box s={[0.55, 0.6, 0.6]} m={K.yellowDark} position={[0, ARM_CYL_BASE[1] - 0.25, ARM_CYL_BASE[0]]} />
           {/* hoses along the top: from the foot over the knee to the arm and bucket cylinders */}
           {[-0.36, -0.2, 0.2, 0.36].map((x) => (
@@ -570,6 +716,22 @@ function Equipment() {
               m={K.hose}
               seg={40}
             />
+          ))}
+          {/* steel hydraulic lines along both sides, clamped */}
+          {[-0.53, 0.53].map((x) => (
+            <group key={x}>
+              <Pipe pts={[[x, 0.15, 0.6], [x, 0.75, 2.4], [x, 1.05, 3.9], [x, 0.85, 5.4], [x, 0.3, 7.6]]} r={0.03} m={K.steel} seg={30} />
+              {[1.5, 3.0, 4.6, 6.4].map((z) => (
+                <Box key={z} s={[0.06, 0.12, 0.08]} m={K.black} position={[x, z < 3.9 ? 0.15 + (z - 0.6) * 0.29 : 1.05 - (z - 3.9) * 0.24, z]} />
+              ))}
+            </group>
+          ))}
+          {/* pin end caps */}
+          {[-0.64, 0.64].map((x) => (
+            <group key={x}>
+              <Cyl r={0.2} l={0.05} axis="x" m={K.black} position={[x, 0, 0]} />
+              <Cyl r={0.17} l={0.05} axis="x" m={K.black} position={[x * 0.88, 0, 8.2]} />
+            </group>
           ))}
           {/* boom work light */}
           <group position={[0.52, 0.95, 2.1]}>
