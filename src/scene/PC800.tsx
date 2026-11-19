@@ -790,7 +790,7 @@ function ToolMesh() {
 }
 
 export function PC800() {
-  useUI(() => `${ex.under}${ex.gaugeWide}`); // re-render only when the undercarriage changes
+  useUI(() => `${ex.under}${ex.gaugeWide}${ex.armId}`); // re-render only when the undercarriage or arm changes
   const root = useRef<THREE.Group>(null);
   const upper = useRef<THREE.Group>(null);
   const last = useRef({ t: ex.time });
@@ -811,7 +811,7 @@ export function PC800() {
       {ex.under === 'pontoon' ? <Pontoons /> : <Carrier key={String(ex.gaugeWide)} />}
       <group ref={upper}>
         <Upper />
-        <Equipment />
+        <Equipment key={ex.armId} />
       </group>
     </group>
   );

@@ -81,6 +81,8 @@ export interface Exc {
   dial: number; // fuel dial 0…1
   mode: WorkMode;
   swingPriority: boolean;
+  /** Komatsu two-mode boom: smooth (default) limits boom-down force so the body does not lift; power gives it all */
+  boomPower: boolean;
   pmT: number; // power max seconds left
   horn: boolean;
   // engine
@@ -245,6 +247,7 @@ export function create(): Exc {
     dial: 0.85,
     mode: 'P',
     swingPriority: false,
+    boomPower: false,
     pmT: 0,
     horn: false,
     engine: 'off',
@@ -273,7 +276,7 @@ export function create(): Exc {
     stuck: 0,
     belt: [0, 0],
     contacts: [],
-    bucketS: [V(), V(), V(), V()],
+    bucketS: Array.from({ length: 9 }, () => V()),
     tau: { boom: 0, arm: 0, bucket: 0 },
     cutting: 0,
     blocked: false,
@@ -437,7 +440,55 @@ export function gravityTorques(c: Exc, e: ReturnType<typeof equipment>) {
   return { boom, arm, bucket };
 }
 
+/** Is any part of the work equipment inside the machine itself or a truck body? */
+export function intrudes(c: Exc) {
+  const e = equipment(c);
+  const pts = (c.tool === 'bucket' ? [e.T, e.H, e.B, e.P2] : [e.T, e.P2]).concat([0.25, 0.5, 0.75].map((k) => e.P1.clone().lerp(e.P2, k)), [e.P1]);
+  const s = Math.sin(c.swing);
+  const k = Math.cos(c.swing);
+  const lift = c.under === 'pontoon' ? PONTOON.lift : 0;
+  const g = c.under === 'pontoon' ? PONTOON.x + PONTOON.w / 2 : gauge(c) / 2 + 0.42;
+  const zl = c.under === 'pontoon' ? PONTOON.len / 2 + 0.3 : SPEC.trackLen / 2 + 0.1;
+  const ylim = c.under === 'pontoon' ? PONTOON.h + 0.6 : 1.45;
+  for (const p of pts) {
+    // upper house and cab (upper frame), keeping clear of the boom foot
+    if (p.x > -1.95 && p.x < 1.95 && p.y > SPEC.ringY && p.y < 4.25 && p.z > -4.5 && p.z < 1.95) return 'machine';
+    // tracks and car body (carrier frame)
+    const cx = p.x * k + p.z * s;
+    const cz = -p.x * s + p.z * k;
+    if (Math.abs(cx) < g && Math.abs(cz) < zl && p.y + lift < ylim + lift && p.y + lift > -0.3) return 'machine';
+  }
+  if (c.trucks.length) {
+    const U = frames(c).upper;
+    for (const p of pts) {
+      const w = p.clone().applyMatrix4(U);
+      for (const tr of c.trucks) if (truckHit(tr, w.x, w.y, w.z) === 'body') return 'truck';
+    }
+  }
+  return '';
+}
+
 function hydraulics(c: Exc, dt: number) {
+  const before = { swing: c.swing, boom: c.boom, arm: c.arm, bucket: c.bucket };
+  const wasIn = intrudes(c);
+  hydraulicsMove(c, dt);
+  if (!wasIn) {
+    const hit = intrudes(c);
+    if (hit) {
+      Object.assign(c, before);
+      c.swingV = c.boomV = c.armV = c.bucketV = 0;
+      if (c.time - lastClang > 1.0) {
+        lastClang = c.time;
+        c.events.push('clang');
+        if (hit === 'truck') c.stats.hits++;
+        say(c, hit === 'truck' ? 'Bucket membentur bak truk: tertahan. Angkat lebih tinggi.' : 'Attachment mentok ke badan mesin sendiri (track / kabin).');
+      }
+    }
+  }
+}
+let lastClang = -9;
+
+function hydraulicsMove(c: Exc, dt: number) {
   const cmd = commands(c);
   const S = SPEC;
   const avail = pumpAvail(c);
@@ -448,7 +499,7 @@ function hydraulics(c: Exc, dt: number) {
   // total torque each joint works against, by direction (+ is towards up/out/dump)
   const tq = { boom: gr.boom + c.tau.boom, arm: gr.arm + c.tau.arm, bucket: gr.bucket + c.tau.bucket };
   const fn = [
-    { k: 'boom' as const, c: cmd.boom, up: S.rate.boomUp, dn: S.rate.boomDown, fu: S.flow.boomUp, fd: S.flow.boomDown, cu: S.cap.boomUp * pm * lift, cd: S.cap.boomDown * pm },
+    { k: 'boom' as const, c: cmd.boom, up: S.rate.boomUp, dn: S.rate.boomDown, fu: S.flow.boomUp, fd: S.flow.boomDown, cu: S.cap.boomUp * pm * lift, cd: S.cap.boomDown * pm * (c.boomPower ? 1 : 0.35) },
     { k: 'arm' as const, c: cmd.arm, up: S.rate.armOut, dn: S.rate.armIn, fu: S.flow.armOut, fd: S.flow.armIn, cu: S.cap.armOut * pm, cd: S.cap.armIn * pm },
     { k: 'bucket' as const, c: cmd.bucket, up: S.rate.dump, dn: S.rate.curl, fu: S.flow.dump, fd: S.flow.curl, cu: S.cap.dump * pm, cd: S.cap.curl * pm },
   ];
@@ -637,7 +688,7 @@ function dig(c: Exc, dt: number, e: ReturnType<typeof equipment>) {
         const pm = c.pmT > 0 ? SPEC.powerMax.gain : 1;
         let kf = 0;
         const joints: [number, number, number, number, number][] = [
-          [k.boom, -r(e.F), gr.boom, SPEC.cap.boomUp, SPEC.cap.boomDown],
+          [k.boom, -r(e.F), gr.boom, SPEC.cap.boomUp, SPEC.cap.boomDown * (c.boomPower ? 1 : 0.35)],
           [k.arm, -r(e.P1), gr.arm, SPEC.cap.armOut, SPEC.cap.armIn],
           [k.bucket, -r(e.P2), gr.bucket, SPEC.cap.dump, SPEC.cap.curl],
         ];
@@ -840,14 +891,19 @@ function body(c: Exc, dt: number) {
     }
   }
   // the bucket on the ground: teeth (when they cannot cut), heel, back, the arm's nose
-  const pts = c.tool === 'bucket' ? [e.T, e.H, e.B, e.P2] : [e.T, e.P2];
+  const tool = c.tool === 'bucket' ? [e.T, e.H, e.B, e.P2] : [e.T, e.P2];
+  const armPts = [0.3, 0.65].map((k) => e.P1.clone().lerp(e.P2, k));
+  const boomPts = [e.P1, e.F.clone().lerp(e.P1, 0.75), e.F.clone().lerp(e.P1, 0.5)];
+  const pts = [...tool, ...armPts, ...boomPts];
+  // 3: beyond the bucket pin, 2: on the arm, 1: on the boom
+  const depth = [...tool.map(() => 3), ...armPts.map(() => 2), ...boomPts.map(() => 1)];
   let tauB = 0;
   let tauA = 0;
   let tauK = 0;
   const inv = _inv.copy(upper).invert();
   const inCut = c.cutting > 0.02 && !c.blocked; // the bucket's body follows its edge through the cut
   pts.forEach((p, i) => {
-    if (inCut && i <= 2) {
+    if (inCut && i <= 2 && i < tool.length - 1) {
       c.bucketS[i].set(0, 0, 0);
       return;
     }
@@ -861,8 +917,8 @@ function body(c: Exc, dt: number) {
     const f = _f.clone().transformDirection(inv).multiplyScalar(_f.length());
     const tx = (piv: THREE.Vector3) => (p.y - piv.y) * f.z - (p.z - piv.z) * f.y;
     tauB += -tx(e.F);
-    tauA += -tx(e.P1);
-    tauK += -tx(e.P2);
+    if (depth[i] >= 2) tauA += -tx(e.P1);
+    if (depth[i] >= 3) tauK += -tx(e.P2);
   });
   // cutting resistance acts on the machine too
   if (resist.lengthSq() > 0) {
@@ -902,7 +958,7 @@ function yieldJoint(c: Exc, j: 'boom' | 'arm' | 'bucket', tau: number, dt: numbe
   const S = SPEC.cap;
   const pm = c.pmT > 0 ? SPEC.powerMax.gain : 1;
   // the cylinder side that holds against this torque, its relief a little above the working relief
-  const cap = 1.1 * pm * (j === 'boom' ? (tau > 0 ? S.boomDown : S.boomUp) : j === 'arm' ? (tau > 0 ? S.armIn : S.armOut) : tau > 0 ? S.curl : S.dump);
+  const cap = 1.1 * pm * (j === 'boom' ? (tau > 0 ? S.boomDown * (c.boomPower ? 1 : 0.35) : S.boomUp) : j === 'arm' ? (tau > 0 ? S.armIn : S.armOut) : tau > 0 ? S.curl : S.dump);
   if (Math.abs(tau) <= cap) return;
   const range = j === 'boom' ? SPEC.boomRange : j === 'arm' ? SPEC.armRange : SPEC.bucketRange;
   const rate = Math.sign(tau) * Math.min(0.6, ((Math.abs(tau) - cap) / cap) * 0.8);
@@ -950,17 +1006,14 @@ function hazards(c: Exc) {
     for (const p of [T, H, P2]) {
       const hit = truckHit(tr, p.x, p.y, p.z);
       if (hit === 'cab') fail(c, 'truck', 'Bucket menghantam kabin truk. Sopir di dalam: ini kecelakaan berat.');
-      else if (hit === 'body' && c.time - lastHit > 1.2) {
-        lastHit = c.time;
-        c.stats.hits++;
-        c.events.push('clang');
-        say(c, 'Bucket membentur bak truk. Angkat lebih tinggi sebelum swing.');
-      }
+
     }
   }
-  if (c.tilt > (38 * Math.PI) / 180) fail(c, 'tipped', 'Excavator terguling. Beban terlalu jauh ke samping, atau tanah di bawah track runtuh.');
+  const hullDown = c.contacts.some((ct) => ct.kind === 'hull' && ct.load > 0);
+  // over on its side, or past 50° any way (resting back on the counterweight after a boom lift is not a roll-over)
+  const side = new THREE.Vector3(1, 0, 0).applyQuaternion(c.q).y;
+  if (c.tilt > (50 * Math.PI) / 180 || (hullDown && Math.abs(side) > Math.sin((25 * Math.PI) / 180))) fail(c, 'tipped', 'Excavator terguling. Beban terlalu jauh ke samping, atau tanah di bawah track runtuh.');
 }
-let lastHit = -9;
 
 function fail(c: Exc, f: Fail, m: string) {
   if (c.failed) return;

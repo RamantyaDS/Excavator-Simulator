@@ -74,6 +74,9 @@ function EnginePanel() {
         <button className={ex.pmT > 0 ? 'on' : ''} onClick={() => powerMax(ex)}>
           Power Max {ex.pmT > 0 ? `${fmt(ex.pmT)} s` : '(Spasi)'}
         </button>
+        <button className={ex.boomPower ? 'on' : ''} onClick={() => (ex.boomPower = !ex.boomPower)}>
+          Boom: {ex.boomPower ? 'Power' : 'Smooth'}
+        </button>
         <button className={ex.swingPriority ? 'on' : ''} onClick={() => (ex.swingPriority = !ex.swingPriority)}>
           Swing priority (O)
         </button>
@@ -81,6 +84,7 @@ function EnginePanel() {
           Travel {ex.travelHigh ? 'Hi 4,2' : 'Lo 2,8'} km/j (H)
         </button>
       </div>
+      <p className="dim">Boom Smooth (bawaan Komatsu): tekanan boom-turun dibatasi, badan tidak terangkat saat bucket menekan tanah. Power: tenaga penuh, bisa mengangkat track (trik keluar dari lumpur atau menyeberang parit).</p>
       <h3>Pola joystick</h3>
       <div className="row">
         {(['ISO', 'SAE'] as const).map((p) => (
