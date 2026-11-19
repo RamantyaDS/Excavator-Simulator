@@ -913,3 +913,8 @@ button.on {
 .guide small { grid-column: 1 / -1; opacity: 0.75; }
 .guide b { font-size: 26px; font-variant-numeric: tabular-nums; }
 .guide span { font-size: 12px; opacity: 0.9; }
+
+/* full-mode performance warning */
+.fpswarn { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 60; display: flex; gap: 10px; align-items: center; max-width: min(720px, 94vw); background: rgba(40, 24, 10, 0.95); color: #ffe7c2; border: 1px solid #c77a1e; border-radius: 10px; padding: 10px 12px; font-size: 13.5px; line-height: 1.4; }
+.fpswarn button { flex: none; background: #f0a01e; color: #111; border: 0; border-radius: 7px; padding: 7px 10px; font: inherit; font-weight: 700; cursor: pointer; }
+.fpswarn .x { background: none; color: #ffe7c2; font-size: 18px; padding: 0 4px; }

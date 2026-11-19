@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 
 import { CAMS, KEYS, PAD_KEYS, bindKeys, toggleEngine, touch } from '../input';
 import { FULL, NIGHT, setNight, setQuality } from '../scene/Adaptive';
 import { Experience } from '../scene/Experience';
+import { FpsWarn } from '../scene/FpsWarn';
 import { bucketCap, bucketKg, guidance, machineMass, powerMax, progress, resetRodeo, setArm, setGauge, setRain, setUnder, swapTool } from '../sim/excavator';
 import type { JobId } from '../sim/site';
 import { ARMS, SHOES, SPEC, type ArmId, type ShoeId, type ToolId } from '../sim/spec';
@@ -511,6 +512,7 @@ export function App() {
   return (
     <>
       <Experience />
+      <FpsWarn />
       <header className="brand">
         <button className="menu" onClick={() => useUI.getState().set({ panel: !panel })} aria-label={panel ? 'Sembunyikan panel' : 'Tampilkan panel'}>
           {panel ? '◀' : '☰'}
