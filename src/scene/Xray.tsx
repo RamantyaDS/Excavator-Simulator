@@ -55,7 +55,7 @@ function Flow() {
     const b = ex.boom;
     const onBoom = (s: number, h: number) => U(e.F.x, e.F.y + s * Math.sin(b) + h * Math.cos(b), e.F.z + s * Math.cos(b) - h * Math.sin(b));
     const paths = [
-      [pump, valve, U(e.F.x + 0.68, SPEC.ringY + 0.45, 1.75)],
+      [pump, valve, U(e.F.x + 0.68, SPEC.ringY + 0.45, 2.0)],
       [pump, valve, W(e.F), onBoom(2, 1.2), onBoom(4.2, 1.8)],
       [pump, valve, W(e.F), onBoom(2, 1.2), onBoom(4, 1.6), onBoom(6.5, 0.8), W(e.P1), W(e.P1.clone().lerp(e.P2, 0.15))],
       [pump, valve, U(0.6, 2.0, -0.5)],

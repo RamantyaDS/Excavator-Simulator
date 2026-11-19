@@ -75,7 +75,7 @@ function WorkLights() {
     const u = excObj.upper;
     if (!u) return;
     u.updateWorldMatrix(true, false);
-    a.current!.position.set(1.0, 4.6, 2.2).applyMatrix4(u.matrixWorld);
+    a.current!.position.set(1.0, 3.75, 2.0).applyMatrix4(u.matrixWorld);
     const T = tipWorld(ex);
     tgt.position.copy(T);
     tgt.updateMatrixWorld();
@@ -172,7 +172,7 @@ function CameraRig() {
     const u = excObj.upper;
     if (cam === 'cab' && u) {
       u.updateWorldMatrix(true, false);
-      tmp.v.set(1.15, 3.55, 0.75).applyMatrix4(u.matrixWorld);
+      tmp.v.set(1.15, 3.05, 1.05).applyMatrix4(u.matrixWorld);
       camera.position.copy(tmp.v);
       u.getWorldQuaternion(tmp.q);
       camera.quaternion.copy(tmp.q).multiply(new THREE.Quaternion().setFromEuler(tmp.e.set(look.cabPitch, look.cabYaw + Math.PI, 0, 'YXZ')));

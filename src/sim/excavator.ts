@@ -452,7 +452,7 @@ export function intrudes(c: Exc) {
   const ylim = c.under === 'pontoon' ? PONTOON.h + 0.6 : 1.45;
   for (const p of pts) {
     // upper house and cab (upper frame), keeping clear of the boom foot
-    if (p.x > -1.95 && p.x < 1.95 && p.y > SPEC.ringY && p.y < 4.25 && p.z > -4.5 && p.z < 1.95) return 'machine';
+    if (p.x > -1.95 && p.x < 1.95 && p.y > SPEC.ringY && p.y < 3.8 && p.z > -4.5 && p.z < 1.95) return 'machine';
     // tracks and car body (carrier frame)
     const cx = p.x * k + p.z * s;
     const cz = -p.x * s + p.z * k;
