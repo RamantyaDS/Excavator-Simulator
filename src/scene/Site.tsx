@@ -130,6 +130,7 @@ function Palms() {
         const xx = x + ((z * 7) % 3);
         if (Math.abs(z - CANAL.z) < CANAL.top / 2 + 3) continue;
         if (z > ROAD.z0 - 2 && z < ROAD.z1 + 2) continue;
+        if (z < -63 && xx < -47) continue; // the swamp pond
         out.push([xx, z]);
       }
     return out;
@@ -267,7 +268,7 @@ function Trees() {
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     pts.forEach(([x, z, s], i) => {
-      m.compose(new THREE.Vector3(x, 3 * s - 0.6, z), q, new THREE.Vector3(s, s, s));
+      m.compose(new THREE.Vector3(x, 3 * s - 0.6, z), q.identity(), new THREE.Vector3(s, s, s));
       trunks.current!.setMatrixAt(i, m);
       for (let k = 0; k < PER; k++) {
         const a = k * 2.1 + i;

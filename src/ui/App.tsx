@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 
 import { CAMS, KEYS, PAD_KEYS, bindKeys, toggleEngine, touch } from '../input';
 import { FULL, NIGHT, setNight, setQuality } from '../scene/Adaptive';
 import { Experience } from '../scene/Experience';
-import { bucketCap, bucketKg, guidance, machineMass, powerMax, progress, setArm, setGauge } from '../sim/excavator';
+import { bucketCap, bucketKg, guidance, machineMass, powerMax, progress, resetRodeo, setArm, setGauge, setRain, setUnder, swapTool } from '../sim/excavator';
 import type { JobId } from '../sim/site';
-import { ARMS, SHOES, SPEC, type ArmId, type ShoeId } from '../sim/spec';
+import { ARMS, SHOES, SPEC, type ArmId, type ShoeId, type ToolId } from '../sim/spec';
 import { SOIL } from '../sim/terrain';
 import { TRUCK } from '../sim/trucks';
 import { ensureAudio, setSound, soundOn, soundStatus } from '../sound';
@@ -19,6 +19,11 @@ const JOBS: { id: JobId; name: string; text: string; link?: [string, string] }[]
   { id: 'trench', name: '2 · Parit dengan machine guidance', text: 'Parit lurus 38 m, lebar dasar 2 m, kemiringan 1%. Layar guidance menunjukkan ujung gigi terhadap desain (cm). Ada pipa gas di sisi parit dan kabel fiber melintang: ikuti isyarat spotter.' },
   { id: 'canal', name: '3 · Kanal drainase kebun sawit', text: 'Gali kanal di lahan gambut basah (air tanah tinggi, kanal terisi air) dan timbun tanahnya menjadi jalan kebun di sisi utara. Gambut lunak: track bisa amblas, pakai shoe lebar.', link: ['Simulator traktor MF 5M.145', 'https://ramantyads.github.io/Tractor-Simulator/'] },
   { id: 'foundation', name: '4 · Galian pondasi genset', text: 'Galian 7 × 4 m sedalam 1,6 m dengan dasar rata ±5 cm di depan rumah genset. Genset 2250 kVA akan dipasang crane di sini.', link: ['Simulator crane', 'https://ramantyads.github.io/Crane-Simulator/'] },
+  { id: 'breaker', name: '5 · Pecah batu dengan breaker', text: 'Ganti ke breaker di rak quick coupler (dekat titik awal). Di tebing quarry barat laut: tekan chisel ke batu, tahan R untuk memalu. Batu pecah bisa digali dengan bucket.' },
+  { id: 'logs', name: '6 · Pindahkan kayu dengan grapple', text: 'Ganti ke grapple di rak. Ambil 6 batang kayu (R menutup capit) dan letakkan di lingkaran kuning TUMPUKAN KAYU.' },
+  { id: 'lowbed', name: '7 · Naik ke lowbed', text: 'Trik operator: naik ke trailer lowbed lewat ramp belakang dengan track lurus, berhenti di tengah dek, rata. Pelan di ujung ramp: titik berat pindah saat melewati engsel.' },
+  { id: 'amphib', name: '8 · Amfibi: seberangi rawa', text: 'Pasang undercarriage amfibi (tab Setup) dan berenang menyeberangi rawa di blok gambut ke patok kuning. Ponton kustom 11 m: untuk PC800 ini bukan produk standar Komatsu.' },
+  { id: 'rodeo', name: '9 · Excavator Rodeo', text: 'Lomba keterampilan operator: masukkan bola oranye ke drum biru, letakkan telur di atas tiang tanpa pecah, dorong 3 ban ke lingkaran kuning. Waktu dihitung.' },
   { id: 'free', name: 'Gali bebas', text: 'Seluruh site bebas digali: bukit lempung, pasir di timur, gambut di barat daya, batu di barat laut (perlu breaker).' },
 ];
 
@@ -118,6 +123,11 @@ function MissionPanel() {
           )}
         </div>
       ))}
+      {ex.job === 'rodeo' && (
+        <button className="small" onClick={() => resetRodeo(ex)}>
+          Mulai ulang Rodeo
+        </button>
+      )}
       <p className="dim">Machine guidance (G) mewarnai tanah: merah = masih harus digali, hijau = sesuai desain, biru = terlalu dalam.</p>
     </>
   );
@@ -127,6 +137,24 @@ function SetupPanel() {
   useUI((s) => s.tick);
   return (
     <>
+      <h3>Attachment (quick coupler, di rak)</h3>
+      <div className="row">
+        {(['bucket', 'breaker', 'grapple'] as ToolId[]).map((tl) => (
+          <button key={tl} className={ex.tool === tl ? 'on' : ''} onClick={() => swapTool(ex, tl)}>
+            {tl === 'bucket' ? 'Bucket' : tl === 'breaker' ? 'Breaker' : 'Grapple'}
+          </button>
+        ))}
+      </div>
+      {ex.swapT > 0 && <p className="dim">Quick coupler bekerja… {fmt(ex.swapT)} s</p>}
+      <h3>Undercarriage</h3>
+      <div className="row">
+        <button className={ex.under === 'track' ? 'on' : ''} onClick={() => setUnder(ex, 'track')}>
+          Track standar
+        </button>
+        <button className={ex.under === 'pontoon' ? 'on' : ''} onClick={() => setUnder(ex, 'pontoon')}>
+          Amfibi (ponton kustom)
+        </button>
+      </div>
       <h3>Arm (pilihan resmi Komatsu)</h3>
       <div className="row wrap">
         {(Object.keys(ARMS) as ArmId[]).map((a) => (
@@ -184,6 +212,16 @@ function ViewPanel() {
           Mode penuh
         </button>
       </div>
+      <h3>Cuaca dan X-ray</h3>
+      <div className="row">
+        <button className={ex.rain ? 'on' : ''} onClick={() => (setRain(ex, !ex.rain), ui.bump())}>
+          Hujan {ex.rain ? 'ON' : 'OFF'}
+        </button>
+        <button className={ui.xray ? 'on' : ''} onClick={() => ui.set({ xray: !ui.xray })}>
+          X-ray hidrolik (X)
+        </button>
+      </div>
+      <p className="dim">Hujan: tanah licin, lereng lebih mudah longsor, air tanah naik dan galian tergenang. X-ray: aliran oli dari pompa ke silinder, warna = tekanan.</p>
       <h3>Waktu</h3>
       <div className="row">
         <button className={!NIGHT ? 'on' : ''} onClick={() => NIGHT && setNight(false)}>
@@ -319,6 +357,11 @@ function hint() {
     if (pct > 0.92) return `Truk ${Math.round(pct * 100)}%: cukup. Klakson (B) supaya berangkat.`;
     return `Truk menunggu: ${Math.round(pct * 100)}% (${tr.passes} bucket). Swing di atas bak, buka bucket pelan (joystick kanan ke kanan).`;
   }
+  if (ex.job === 'breaker') return ex.tool !== 'breaker' ? 'Ke rak quick coupler (dekat titik awal), bawa ujung arm ke rak, pilih Breaker di tab Setup.' : 'Ke tebing batu (barat laut). Chisel tegak ke batu, boom tekan sedikit, tahan R.';
+  if (ex.job === 'logs') return ex.tool !== 'grapple' ? 'Ganti ke grapple di rak quick coupler (tab Setup).' : 'Buka capit di atas kayu (R), turunkan, tutup (R), angkat, bawa ke lingkaran kuning.';
+  if (ex.job === 'lowbed') return 'Lowbed di timur. Luruskan dengan ramp belakang, naik pelan (travel Lo), bucket rendah di depan untuk keseimbangan.';
+  if (ex.job === 'amphib') return ex.under !== 'pontoon' ? 'Pasang undercarriage amfibi di tab Setup.' : 'Ke rawa di barat daya. Masuk air pelan, track mendayung, ke patok kuning di seberang.';
+  if (ex.job === 'rodeo') return 'Arena Rodeo di utara. Bola ke drum, telur ke tiang (pelan!), ban ke lingkaran.';
   if (ex.job === 'trench') return 'Jalan ke patok merah muda (selatan). Gali sepanjang garis, pantau angka guidance sampai hijau.';
   if (ex.job === 'canal') return 'Ke blok gambut (barat daya). Kanal di antara patok hijau, timbun tanahnya di antara patok kuning.';
   if (ex.job === 'foundation') return 'Ke depan rumah genset (tenggara). Gali di antara patok biru sampai dasar rata hijau.';

@@ -322,6 +322,13 @@ export function playEvent(e: string) {
   else if (e === 'stop') oneShot(N.stopB, 1);
   else if (e === 'dump' || e === 'truck-load') burst(500, 0.8, 0.35, 1.4, 'lowpass', 0.08);
   else if (e === 'clang') clunk(600, 0.9, 0.4);
+  else if (e === 'hammer') clunk(900 + Math.random() * 300, 0.5, 0.05);
+  else if (e === 'ding') {
+    beepOnce(1320, 0.12);
+    setTimeout(() => beepOnce(1760, 0.18), 140);
+  } else if (e === 'grab' || e === 'release') clunk(700, 0.35, 0.15);
+  else if (e === 'egg') burst(3000, 0.6, 0.3, 0.3, 'highpass', 0.002);
+  else if (e === 'bump') clunk(250, 0.3, 0.12);
   else if (e === 'powermax') beepOnce(1800, 0.12);
   else if (e === 'truck-ready') beepOnce(900, 0.2);
   else if (e === 'truck-leave' || e === 'truck-overload') clunk(220, 0.5, 0.3);
@@ -410,7 +417,7 @@ export function updateSound(distance: number, inCab: boolean) {
   k(N.tyre.f.frequency, 260 + sp * 40, 0.2);
   k(N.tyre.g.gain, Math.min(0.2, sp * 0.03) * near * cab, 0.1);
   k(N.hornG.gain, horn ? 0.13 * Math.max(0.4, near) : 0, 0.02);
-  k(N.wind.g.gain, 0.02 * cab, 0.5);
+  k(N.wind.g.gain, (cr.rain ? 0.11 : 0.02) * cab, 0.5);
 
   // the building site around: hammering on steel, a truck reversing somewhere
   if (t > nextHammer) {

@@ -10,7 +10,9 @@
 // Bucket: its edge cuts the cells it sweeps (resistance from the soil), fills by the swell of what it cut, spills when
 // tipped, drops into a truck bed or onto the ground.
 import * as THREE from 'three';
-import { CANAL, POWERLINE, ROAD, START, UTILS, design, pitDesign, shape, trenchDesign, type JobId } from './site';
+import { groundAt } from './colliders';
+import { createProps, stepProps, type Prop, type ToolPoint } from './props';
+import { BREAK_GOAL, CANAL, LOGS, LOG_STACK, LOWBED, POND_GOAL, POWERLINE, QUARRY, RACK, ROAD, RODEO, START, UTILS, design, pitDesign, shape, trenchDesign, type JobId } from './site';
 import { ARMS, SHOES, SPEC, type ArmId, type ShoeId, type ToolId } from './spec';
 import {
   CELL,
@@ -94,6 +96,17 @@ export interface Exc {
   shoe: ShoeId;
   tool: ToolId;
   gaugeWide: boolean;
+  under: 'track' | 'pontoon';
+  /** auxiliary hydraulics: breaker hammering (held), grapple jaws closed */
+  aux: boolean;
+  auxPrev: boolean;
+  swapT: number;
+  swapTo: ToolId;
+  props: Prop[];
+  rain: boolean;
+  broken: number;
+  rodeo: { start: number; ball: boolean; egg: boolean; tires: boolean; time: number };
+  hammerT: number;
   // bucket contents (loose m³)
   vol: number;
   kind: Soil;
@@ -153,6 +166,7 @@ const _ry = new THREE.Matrix4();
 export function frames(c: Exc) {
   _m.compose(c.p, c.q, new THREE.Vector3(1, 1, 1));
   _ry.makeRotationY(c.swing);
+  if (c.under === 'pontoon') _ry.setPosition(0, PONTOON.lift, 0);
   _mu.multiplyMatrices(_m, _ry);
   return { carrier: _m, upper: _mu };
 }
@@ -169,10 +183,18 @@ export function heading(c: Exc) {
 }
 
 // ---------- create ----------
+/** Custom amphibious undercarriage: two sealed pontoons with track chains round them, the upper raised on a frame. */
+export const PONTOON = { x: 2.55, w: 2.6, len: 11, h: 2.0, lift: 1.05, kg: 18000 };
+
 function makeContacts(c: Exc): Contact[] {
   const out: Contact[] = [];
   const g = gauge(c) / 2;
-  for (const side of [-1, 1]) {
+  if (c.under === 'pontoon') {
+    for (const side of [-1, 1])
+      for (let i = 0; i < 7; i++) out.push({ p: new THREE.Vector3(side * PONTOON.x, 0, -PONTOON.len / 2 + 0.8 + (i * (PONTOON.len - 1.6)) / 6), kind: 'track', side, upper: false, s: V(), load: 0 });
+    for (const side of [-1, 1]) for (const z of [-PONTOON.len / 2, PONTOON.len / 2]) out.push({ p: new THREE.Vector3(side * PONTOON.x, 0.7, z), kind: 'track', side, upper: false, s: V(), load: 0 });
+  }
+  for (const side of c.under === 'pontoon' ? [] : [-1, 1]) {
     for (let i = 0; i < 7; i++) {
       const z = -SPEC.tumbler / 2 + (i * SPEC.tumbler) / 6;
       out.push({ p: new THREE.Vector3(side * g, 0, z), kind: 'track', side, upper: false, s: V(), load: 0 });
@@ -180,7 +202,7 @@ function makeContacts(c: Exc): Contact[] {
     // sprocket and idler ends, a little up: they meet a step or a ramp first
     for (const z of [-SPEC.trackLen / 2 + 0.25, SPEC.trackLen / 2 - 0.25]) out.push({ p: new THREE.Vector3(side * g, 0.5, z), kind: 'track', side, upper: false, s: V(), load: 0 });
   }
-  for (const z of [-1.4, 0, 1.4]) out.push({ p: new THREE.Vector3(0, 0.84, z), kind: 'belly', side: 0, upper: false, s: V(), load: 0 });
+  if (c.under === 'track') for (const z of [-1.4, 0, 1.4]) out.push({ p: new THREE.Vector3(0, 0.84, z), kind: 'belly', side: 0, upper: false, s: V(), load: 0 });
   // hull: counterweight, deck corners, cab and engine hood (only touch if it rolls over)
   const hull: [number, number, number][] = [
     [1.75, 1.6, -4.3],
@@ -236,6 +258,16 @@ export function create(): Exc {
     shoe: 610,
     tool: 'bucket',
     gaugeWide: true,
+    under: 'track',
+    aux: false,
+    auxPrev: false,
+    swapT: 0,
+    swapTo: 'bucket',
+    props: [],
+    rain: false,
+    broken: 0,
+    rodeo: { start: -1, ball: false, egg: false, tires: false, time: 0 },
+    hammerT: 0,
     vol: 0,
     kind: Soil.Loose,
     stuck: 0,
@@ -260,6 +292,7 @@ export function create(): Exc {
     stats: { dugM3: 0, truckKg: 0, trucks: 0, overload: 0, spilledM3: 0, hits: 0, fuelAtStart: 0 },
   };
   c.contacts = makeContacts(c);
+  c.props = createProps(terrain);
   // settle on the ground
   c.p.y = heightAt(terrain, c.p.x, c.p.z) + 0.02;
   c.prevTip.copy(tipWorld(c));
@@ -300,7 +333,7 @@ export function powerMax(c: Exc) {
 
 // ---------- masses ----------
 export function machineMass(c: Exc) {
-  return SPEC.mass.carrier + SHOES[c.shoe].mass + SPEC.mass.upper + SPEC.mass.boom + ARMS[c.armId].mass + SPEC.mass.bucket + bucketKg(c);
+  return SPEC.mass.carrier + (c.under === 'pontoon' ? PONTOON.kg : SHOES[c.shoe].mass) + SPEC.mass.upper + SPEC.mass.boom + ARMS[c.armId].mass + TOOL_KG[c.tool] + bucketKg(c);
 }
 export const bucketKg = (c: Exc) => c.vol * (SOIL[c.kind].rho / SOIL[c.kind].swell) * 1000;
 
@@ -311,11 +344,16 @@ function cgCarrier(c: Exc, e = equipment(c)) {
     [SPEC.mass.upper, new THREE.Vector3(0.1, 2.4, -1.75)],
     [SPEC.mass.boom, e.F.clone().lerp(e.P1, 0.45).add(new THREE.Vector3(0, 0.5, 0))],
     [ARMS[c.armId].mass, e.P1.clone().lerp(e.P2, 0.4)],
-    [SPEC.mass.bucket + bucketKg(c), e.B],
+    [TOOL_KG[c.tool] + bucketKg(c), e.B],
   ];
   const cg = V();
   let m = 0;
   const ry = new THREE.Matrix4().makeRotationY(c.swing);
+  if (c.under === 'pontoon') {
+    ry.setPosition(0, PONTOON.lift, 0);
+    items[0][0] += PONTOON.kg;
+    items[0][1].y = 1.0;
+  }
   items.forEach(([k, p], i) => {
     const w = i === 0 ? p : p.clone().applyMatrix4(ry);
     cg.addScaledVector(w, k);
@@ -346,6 +384,7 @@ export function step(c: Exc, dt: number) {
   hydraulics(c, dt);
   const e = equipment(c);
   dig(c, dt, e);
+  tools(c, dt, e);
   // body: two substeps for the stiff contacts
   for (let i = 0; i < 2; i++) body(c, dt / 2);
   hazards(c);
@@ -385,7 +424,7 @@ export function commands(c: Exc) {
   return { swing: -c.lx, boom: -c.ly, arm: c.ry, bucket: c.rx };
 }
 
-function gravityTorques(c: Exc, e: ReturnType<typeof equipment>) {
+export function gravityTorques(c: Exc, e: ReturnType<typeof equipment>) {
   // about each joint axis (upper x); + raises (boom up / arm out / bucket dump)
   const g = (m: number, p: THREE.Vector3, piv: THREE.Vector3) => -m * G * (p.z - piv.z);
   const kB = SPEC.mass.bucket + bucketKg(c);
@@ -706,20 +745,20 @@ function contactForce(
   dt: number,
 ): number {
   const t = c.terrain;
-  const h = heightAt(t, pw.x, pw.z);
-  const d = h - pw.y;
+  const gr = groundAt(t, pw.x, pw.z);
+  const d = gr.h - pw.y;
   if (d <= 0) {
     s.set(0, 0, 0);
     return 0;
   }
-  const soil = soilAt(t, pw.x, pw.z);
+  const soil = gr.mu === null ? soilAt(t, pw.x, pw.z) : Soil.Rock;
   const P = SOIL[soil];
-  const [nx, ny, nz] = normalAt(t, pw.x, pw.z);
+  const [nx, ny, nz] = gr.n;
   _n.set(nx, ny, nz);
   _r.subVectors(pw, cg);
   _vp.crossVectors(c.w, _r).add(c.v);
   const vn = _vp.dot(_n);
-  const sink = P.sink * sinkScale;
+  const sink = gr.mu === null ? P.sink * sinkScale : 0;
   const pen = d * ny;
   const elastic = pen < sink ? k * 0.035 * pen : k * (0.035 * sink + (pen - sink));
   const Fn = Math.max(0, elastic - damp * vn * (pen < sink ? 0.3 : 1));
@@ -736,7 +775,7 @@ function contactForce(
   s.addScaledVector(_vt, dt);
   s.addScaledVector(_n, -s.dot(_n));
   _tmp.copy(s).multiplyScalar(-ks).addScaledVector(_vt, -ct);
-  const lim = mu * P.mu * Fn;
+  const lim = mu * (gr.mu ?? P.mu) * (c.rain && gr.mu === null ? 0.78 : 1) * Fn;
   const ft = _tmp.length();
   if (ft > lim) {
     _tmp.multiplyScalar(lim / ft);
@@ -774,8 +813,9 @@ function body(c: Exc, dt: number) {
       damp = 1.2e5;
       mu = 0.6;
     }
-    const fn = contactForce(c, _pw, cg, ct.s, k, damp, mu, belt, ct.kind === 'track' ? sinkScale : sinkScale * 0.5, dt);
+    const fn = contactForce(c, _pw, cg, ct.s, k, damp, mu, belt, ct.kind === 'track' ? (c.under === 'pontoon' ? 0.05 : sinkScale) : sinkScale * 0.5, dt);
     ct.load = fn;
+    if (c.under === 'pontoon' && ct.kind === 'track' && ct.p.y < 0.1) floatAt(c, _pw, cg, belt ?? 0, F, Tq);
     if (fn > 0) {
       F.add(_f);
       _r.subVectors(_pw, cg);
@@ -800,7 +840,7 @@ function body(c: Exc, dt: number) {
     }
   }
   // the bucket on the ground: teeth (when they cannot cut), heel, back, the arm's nose
-  const pts = [e.T, e.H, e.B, e.P2];
+  const pts = c.tool === 'bucket' ? [e.T, e.H, e.B, e.P2] : [e.T, e.P2];
   let tauB = 0;
   let tauA = 0;
   let tauK = 0;
@@ -966,6 +1006,8 @@ function gradeIn(c: Exc, x0: number, x1: number, z0: number, z1: number, f: (x: 
 }
 
 export function progress(c: Exc): Progress {
+  const p2 = phase2Progress(c);
+  if (p2) return p2;
   if (c.job === 'truck') {
     const done = c.stats.trucks;
     const used = c.stats.fuelAtStart - c.fuelL;
@@ -991,4 +1033,189 @@ export function progress(c: Exc): Progress {
     return { pct, good: k.good, over: k.over, todo: k.n - k.good, text: `Kanal ±12 cm: ${Math.round((k.good / k.n) * 100)}% · jalan kebun ditimbun: ${Math.round((r.good / r.n) * 100)}%` };
   }
   return { pct: 0, good: 0, over: 0, todo: 0, text: `Gali bebas · ${c.stats.dugM3.toFixed(0)} m³ tergali` };
+}
+
+// ---------- phase 2: tools, props, water, jobs ----------
+export const TOOL_KG: Record<ToolId, number> = { bucket: SPEC.mass.bucket, breaker: 5600, grapple: 4200 };
+
+/** Float the pontoons: buoyancy of each submerged column, water drag, the track cleats paddling. */
+function floatAt(c: Exc, pw: THREE.Vector3, cg: THREE.Vector3, belt: number, F: THREE.Vector3, Tq: THREE.Vector3) {
+  const t = c.terrain;
+  const i = Math.round(toCell(pw.x));
+  const j = Math.round(toCell(pw.z));
+  if (i < 0 || j < 0 || i >= N || j >= N) return;
+  const k = idx(i, j);
+  const wl = t.water[t.zone[k]];
+  if (t.h[k] >= wl || pw.y >= wl) return;
+  const A = (PONTOON.len * PONTOON.w) / 7;
+  const d = Math.min(PONTOON.h, wl - pw.y);
+  _r.subVectors(pw, cg);
+  _vp.crossVectors(c.w, _r).add(c.v);
+  const f = new THREE.Vector3(0, 1000 * G * A * d - 3.5e4 * A * _vp.y, 0);
+  const fw = new THREE.Vector3(0, 0, 1).applyQuaternion(c.q);
+  fw.y = 0;
+  fw.normalize();
+  const sub = d / PONTOON.h;
+  // paddle thrust along the pontoon, drag against sideways and forward motion
+  const vf = _vp.x * fw.x + _vp.z * fw.z;
+  const thrust = 2.2e3 * A * sub * (belt * 0.45 - vf);
+  f.x += fw.x * thrust - 900 * A * sub * (_vp.x - fw.x * vf);
+  f.z += fw.z * thrust - 900 * A * sub * (_vp.z - fw.z * vf);
+  F.add(f);
+  Tq.add(new THREE.Vector3().crossVectors(_r, f));
+}
+
+export function setUnder(c: Exc, u: 'track' | 'pontoon') {
+  if (c.under === u) return;
+  c.under = u;
+  c.contacts = makeContacts(c);
+  c.p.y += u === 'pontoon' ? 0.5 : 0;
+  say(c, u === 'pontoon' ? 'Undercarriage amfibi (kustom): dua ponton 11 m dengan rantai track, mesin naik 1 m. Bisa mengapung di rawa.' : 'Undercarriage track standar terpasang.');
+}
+
+export function setRain(c: Exc, on: boolean) {
+  if (c.rain === on) return;
+  c.rain = on;
+  c.terrain.wet = on;
+  for (let z = 0; z < c.terrain.water.length; z++) c.terrain.water[z] += on ? 0.45 : -0.45;
+  c.terrain.dirty = [0, 0, N - 1, N - 1];
+}
+
+/** Quick coupler: swap the tool at the rack (the old one is set down, the new one picked up). */
+export function swapTool(c: Exc, tool: ToolId) {
+  if (c.tool === tool || c.swapT > 0) return;
+  if (c.vol > 0.05) return say(c, 'Kosongkan bucket dulu.');
+  const T = tipWorld(c);
+  if (Math.hypot(T.x - RACK.x, T.z - RACK.z) > 4.5) return say(c, 'Ganti attachment di rak quick coupler (dekat titik awal): bawa ujung arm ke rak dulu.');
+  c.swapT = 3;
+  c.swapTo = tool;
+  c.aux = false;
+  c.events.push('coupler');
+}
+
+const _tp = V();
+function tools(c: Exc, dt: number, e: ReturnType<typeof equipment>) {
+  if (c.swapT > 0) {
+    c.swapT -= dt;
+    if (c.swapT <= 0) {
+      c.tool = c.swapTo;
+      c.events.push('coupler');
+      say(c, c.tool === 'breaker' ? 'Breaker terpasang. Tekan ujung chisel ke batu, tahan R untuk memalu.' : c.tool === 'grapple' ? 'Grapple terpasang. R menutup / membuka capit.' : 'Bucket terpasang.');
+    }
+  }
+  const U = frames(c).upper;
+  const T = e.T.clone().applyMatrix4(U);
+  const t = c.terrain;
+  // breaker: hammering on rock breaks it up under the chisel
+  if (c.tool === 'breaker' && c.aux && c.engine === 'running' && !c.locked) {
+    c.hammerT += dt;
+    const g = groundAt(t, T.x, T.z).h;
+    if (T.y < g + 0.12) {
+      const ci = toCell(T.x);
+      const cj = toCell(T.z);
+      for (let j = Math.floor(cj - 2); j <= Math.ceil(cj + 2); j++)
+        for (let i = Math.floor(ci - 2); i <= Math.ceil(ci + 2); i++) {
+          if (i < 0 || j < 0 || i >= N || j >= N) continue;
+          if (Math.hypot(i - ci, j - cj) > 1.9) continue;
+          const k = idx(i, j);
+          if (t.h[k] - t.rock[k] < 0.25) {
+            const dr = 0.22 * dt;
+            t.rock[k] -= dr;
+            c.broken += dr * CELL * CELL;
+            t.dirty = [Math.min(t.dirty[0], i), Math.min(t.dirty[1], j), Math.max(t.dirty[2], i), Math.max(t.dirty[3], j)];
+          }
+        }
+      if (c.hammerT > 0.09) {
+        c.hammerT = 0;
+        c.events.push('hammer');
+      }
+    }
+  }
+  // props
+  const prev = (c as unknown as { _pp?: THREE.Vector3[] })._pp;
+  const now = [e.T, e.H, e.B, e.P2].map((p) => p.clone().applyMatrix4(U));
+  const pts: ToolPoint[] = now
+    .filter((_, i) => c.tool === 'bucket' || i === 0 || i === 3)
+    .map((p, i) => ({ p, v: prev ? p.clone().sub(prev[i] ?? p).divideScalar(dt) : V(), r: c.tool === 'bucket' ? 0.5 : 0.35 }));
+  (c as unknown as { _pp?: THREE.Vector3[] })._pp = pts.map((q) => q.p);
+  const justClosed = c.aux && !c.auxPrev;
+  c.auxPrev = c.aux;
+  for (const ev of stepProps(c.props, {
+    t,
+    pts,
+    bucket: c.tool === 'bucket' ? { c: now[2], mouthY: e.mouthY } : null,
+    grapple: c.tool === 'grapple' ? { c: _tp.copy(T), closed: c.aux, justClosed } : null,
+    dt,
+  })) {
+    c.events.push(ev);
+    if (ev === 'egg') say(c, 'Telurnya pecah. Coba lagi lebih halus (Mulai ulang Rodeo di tab Misi).');
+  }
+  rodeoCheck(c);
+}
+
+export function resetRodeo(c: Exc) {
+  const fresh = createProps(c.terrain);
+  c.props = c.props.filter((q) => q.kind === 'log').concat(fresh.filter((q) => q.kind !== 'log'));
+  c.rodeo = { start: c.time, ball: false, egg: false, tires: false, time: 0 };
+}
+
+function rodeoCheck(c: Exc) {
+  const R = c.rodeo;
+  if (c.job !== 'rodeo') return;
+  if (R.start < 0) R.start = c.time;
+  const free = (q: Prop) => q.held === '';
+  const ball = c.props.find((q) => q.kind === 'ball');
+  const egg = c.props.find((q) => q.kind === 'egg');
+  const D = RODEO.drum;
+  const P = RODEO.pedestal;
+  if (!R.ball && ball && free(ball) && Math.hypot(ball.p.x - D.x, ball.p.z - D.z) < D.r && ball.p.y < groundAt(c.terrain, D.x, D.z).h + D.h + 0.3) {
+    R.ball = true;
+    c.events.push('ding');
+    say(c, 'Bola masuk drum!');
+  }
+  if (!R.egg && egg && free(egg) && !egg.broken && Math.hypot(egg.p.x - P.x, egg.p.z - P.z) < P.r && egg.p.y > groundAt(c.terrain, P.x, P.z).h + P.h && Math.abs(egg.v.y) < 0.05) {
+    R.egg = true;
+    c.events.push('ding');
+    say(c, 'Telur di atas tiang, utuh!');
+  }
+  const tires = c.props.filter((q) => q.kind === 'tire');
+  if (!R.tires && tires.every((q) => free(q) && Math.hypot(q.p.x - RODEO.ring.x, q.p.z - RODEO.ring.z) < RODEO.ring.r)) {
+    R.tires = true;
+    c.events.push('ding');
+    say(c, 'Ketiga ban di dalam lingkaran!');
+  }
+  if (R.ball && R.egg && R.tires && !R.time) {
+    R.time = c.time - R.start;
+    say(c, `RODEO SELESAI dalam ${R.time.toFixed(0)} detik!`);
+  }
+}
+
+export function phase2Progress(c: Exc): Progress | null {
+  if (c.job === 'breaker') {
+    const k = Math.min(1, c.broken / BREAK_GOAL);
+    return { pct: k, good: 0, over: 0, todo: 0, text: `Batu dipecah ${c.broken.toFixed(1)} / ${BREAK_GOAL} m³ di tebing quarry (barat laut, x < ${QUARRY.x1}).` };
+  }
+  if (c.job === 'logs') {
+    const n = c.props.filter((q) => q.kind === 'log' && q.held === '' && Math.hypot(q.p.x - LOG_STACK.x, q.p.z - LOG_STACK.z) < LOG_STACK.r).length;
+    return { pct: n / LOGS.n, good: n, over: 0, todo: LOGS.n - n, text: `Kayu di area tumpukan: ${n}/${LOGS.n}` };
+  }
+  if (c.job === 'lowbed') {
+    const L = LOWBED;
+    const dx = c.p.x - L.x;
+    const dz = c.p.z - L.z;
+    const on = Math.abs(dx) < 0.6 && dz > L.z0 + 1.5 && dz < L.z1 - 1.5 && Math.abs(c.p.y - L.deck) < 0.2 && c.tilt < 0.06;
+    const d = Math.hypot(dx, dz);
+    return { pct: on ? 1 : Math.max(0, 1 - d / 60) * 0.8, good: on ? 1 : 0, over: 0, todo: 0, text: on ? 'Di atas lowbed, lurus dan rata. Siap diikat dan diangkut.' : `Jarak ke lowbed ${d.toFixed(0)} m · naik pelan lewat ramp belakang, track lurus.` };
+  }
+  if (c.job === 'amphib') {
+    const d = Math.hypot(c.p.x - POND_GOAL.x, c.p.z - POND_GOAL.z);
+    return { pct: d < 4 ? 1 : Math.max(0, 1 - d / 120), good: 0, over: 0, todo: 0, text: c.under !== 'pontoon' ? 'Pasang undercarriage amfibi (tab Setup), lalu seberangi rawa ke patok kuning.' : `Ke patok kuning di seberang rawa: ${d.toFixed(0)} m` };
+  }
+  if (c.job === 'rodeo') {
+    const R = c.rodeo;
+    const n = +R.ball + +R.egg + +R.tires;
+    const time = R.time || (R.start >= 0 ? c.time - R.start : 0);
+    return { pct: n / 3, good: n, over: 0, todo: 3 - n, text: `Bola ke drum ${R.ball ? '✓' : '·'} · telur ke tiang ${R.egg ? '✓' : '·'} · 3 ban ke lingkaran ${R.tires ? '✓' : '·'} · ${time.toFixed(0)} s` };
+  }
+  return null;
 }

@@ -41,6 +41,9 @@ export function shape(x: number, z: number): { h: number; rock: number; zone: Zo
     const k = smooth(0, 4, Math.min(PEAT.x1 - x, PEAT.z1 - z));
     h = h * (1 - k) + (-0.25 + (noise(x * 0.1, z * 0.1) - 0.5) * 0.15) * k;
     if (k > 0.5) zone = Zone.Peat;
+    // the swamp pond: deep open water
+    const kp = smooth(0, 5, Math.min(x - (-80), -50 - x, z - (-80), -66 - z));
+    h += (-3.0 - h) * kp;
   }
   // rock face: a quarry bench rising to the north-west
   if (x < QUARRY.x1 && z > QUARRY.z0) {
@@ -58,7 +61,7 @@ export function shape(x: number, z: number): { h: number; rock: number; zone: Zo
 export const START = { x: 0, z: 2, heading: 0 };
 
 // ---------- jobs ----------
-export type JobId = 'truck' | 'trench' | 'canal' | 'foundation' | 'free';
+export type JobId = 'truck' | 'trench' | 'canal' | 'foundation' | 'breaker' | 'logs' | 'lowbed' | 'amphib' | 'rodeo' | 'free';
 
 /** Trench with 3D machine guidance: straight, 1 % fall, flat bottom 2.0 m wide. */
 export const TRENCH = { x: 14, z0: -8, z1: -46, w: 2.0, d0: -2.6, d1: -2.98 };
@@ -120,3 +123,19 @@ export function design(job: JobId, x: number, z: number) {
   if (job === 'foundation') return pitDesign(x, z);
   return null;
 }
+
+// ---------- phase 2: tools, lowbed, swamp, Rodeo ----------
+/** Quick-coupler tool rack: tools stand here; the coupler swaps within reach of it. */
+export const RACK = { x: 10, z: 14 };
+/** Lowbed trailer (rear ramp, deck, gooseneck) parked on the east side, heading north. */
+export const LOWBED = { x: 54, z: -4, yaw: 0, w: 3.7, deck: 1.1, z0: -6.5, z1: 6.0, ramp: 4.5, neck: 2.6, neckTop: 1.7 };
+/** A deep swamp pond inside the peat block for the amphibious undercarriage, with a landing on the far side. */
+export const POND = { x0: -79, x1: -50, z0: -79, z1: -66, depth: -3.0 };
+export const POND_GOAL = { x: -64, z: -76 };
+/** Logs for the grapple and the stack area to bring them to. */
+export const LOGS = { x: 26, z: 16, n: 6 };
+export const LOG_STACK = { x: 34, z: 26, r: 4 };
+/** Excavator Rodeo arena: a ball to drop into a drum, an egg to set on a pedestal, tyres to bring into the ring. */
+export const RODEO = { x: 30, z: 46, drum: { x: 36, z: 50, r: 0.6, h: 1.0 }, pedestal: { x: 24, z: 52, r: 0.4, h: 1.2 }, ring: { x: 30, z: 56, r: 2.2 } };
+/** Rock to break in the quarry (m³). */
+export const BREAK_GOAL = 6;

@@ -20,6 +20,7 @@ export const KEYS: [string, string][] = [
   ['E / C', 'Tuas travel kanan maju / mundur'],
   ['Panah', 'Kedua travel sekaligus (↑↓) · belok di tempat (←→)'],
   ['Spasi', 'Power Max (8,5 detik, gaya gali +9,4%)'],
+  ['R', 'Hidrolik tambahan: breaker memalu (tahan), grapple capit buka/tutup'],
   ['H', 'Kecepatan travel Lo / Hi'],
   ['M', 'Mode kerja P / E / L (heavy lift)'],
   ['O', 'Swing priority'],
@@ -73,6 +74,7 @@ function onKey(e: KeyboardEvent) {
   else if (k === '-') ex.dial = Math.max(0, ex.dial - 0.1);
   else if (k === 'g') useUI.getState().set({ guidance: !useUI.getState().guidance });
   else if (k === 'x') useUI.getState().set({ xray: !useUI.getState().xray });
+  else if (k === 'r' && ex.tool === 'grapple') ex.aux = !ex.aux;
 }
 
 export function bindKeys() {
@@ -105,6 +107,7 @@ export function applyHeld(dt: number) {
     padLook.y = (btn(13) ? 1 : 0) - (btn(12) ? 1 : 0);
   }
   horn = padHorn || held.has('b');
+  if (ex.tool === 'breaker') ex.aux = held.has('r') || !!(gp && btn(10));
   ex.horn = horn;
   const key = (a: string, b: string) => (held.has(a) ? 1 : 0) - (held.has(b) ? 1 : 0);
   // joysticks: + forward / right (keyboard levers ease in like proportional pilot valves)

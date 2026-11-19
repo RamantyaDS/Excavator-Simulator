@@ -16,6 +16,9 @@ import { ex } from '../store';
 import { Bake } from './Bake';
 import { Box, Cyl, M, Pipe, useCanvasTexture } from './parts';
 import { weather } from './weather';
+import { BreakerMesh, GrappleMesh, Pontoons } from './Extras';
+import { PONTOON } from '../sim/excavator';
+import { useUI } from '../store';
 
 export const K = {
   yellow: new THREE.MeshStandardMaterial({ color: '#f2b51b', metalness: 0.25, roughness: 0.38 }),
@@ -757,8 +760,7 @@ function Equipment() {
             ))}
           </Bake>
           <group ref={bucket} position={[0, 0, La]}>
-            <BucketMesh />
-            <Load />
+            <ToolMesh />
           </group>
         </group>
       </group>
@@ -774,7 +776,21 @@ function Equipment() {
   );
 }
 
+/** The tool on the quick coupler. */
+function ToolMesh() {
+  useUI(() => ex.tool);
+  if (ex.tool === 'breaker') return <BreakerMesh />;
+  if (ex.tool === 'grapple') return <GrappleMesh />;
+  return (
+    <>
+      <BucketMesh />
+      <Load />
+    </>
+  );
+}
+
 export function PC800() {
+  useUI(() => `${ex.under}${ex.gaugeWide}`); // re-render only when the undercarriage changes
   const root = useRef<THREE.Group>(null);
   const upper = useRef<THREE.Group>(null);
   const last = useRef({ t: ex.time });
@@ -782,6 +798,7 @@ export function PC800() {
     root.current!.position.copy(ex.p);
     root.current!.quaternion.copy(ex.q);
     upper.current!.rotation.y = ex.swing;
+    upper.current!.position.y = ex.under === 'pontoon' ? PONTOON.lift : 0;
     excObj.carrier = root.current;
     excObj.upper = upper.current;
     const dt = Math.min(0.1, Math.max(0, ex.time - last.current.t));
@@ -791,7 +808,7 @@ export function PC800() {
   });
   return (
     <group ref={root}>
-      <Carrier />
+      {ex.under === 'pontoon' ? <Pontoons /> : <Carrier key={String(ex.gaugeWide)} />}
       <group ref={upper}>
         <Upper />
         <Equipment />

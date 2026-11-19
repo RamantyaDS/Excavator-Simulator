@@ -14,7 +14,7 @@ import { useCanvasTexture } from './parts';
 /** Is this cell still the original grass (undisturbed topsoil of the field)? */
 export function isGrass(k: number) {
   const t = ex.terrain;
-  return t.zone[k] === 0 && Math.abs(t.h[k] - t.orig[k]) < 0.03 && t.h[k] <= t.nat[k] + 0.02;
+  return t.zone[k] <= 1 && Math.abs(t.h[k] - t.orig[k]) < 0.03 && t.h[k] <= t.nat[k] + 0.02;
 }
 
 /** Grass from above: thousands of blades in mixed greens over dark soil, some dry ones, clover, bare specks. */
@@ -174,8 +174,12 @@ export function Ground() {
   const job = useRef(ex.job);
 
   const tmp = useMemo(() => new THREE.Color(), []);
+  const peatWater = useRef<THREE.Mesh>(null);
+  const fieldW = useRef<THREE.Mesh>(null);
   useFrame(() => {
     const t = ex.terrain;
+    if (peatWater.current) peatWater.current.position.y = t.water[2];
+    if (fieldW.current) fieldW.current.position.y = t.water[0];
     if (job.current !== ex.job) {
       job.current = ex.job;
       t.dirty = [0, 0, N - 1, N - 1];
@@ -237,10 +241,10 @@ export function Ground() {
   return (
     <group>
       <mesh geometry={geo} material={mat} receiveShadow castShadow={false} />
-      <mesh position={[(PEAT.x0 + PEAT.x1) / 2, ex.terrain.water[2], (PEAT.z0 + PEAT.z1) / 2]} rotation={[-Math.PI / 2, 0, 0]} material={water}>
+      <mesh ref={peatWater} position={[(PEAT.x0 + PEAT.x1) / 2, ex.terrain.water[2], (PEAT.z0 + PEAT.z1) / 2]} rotation={[-Math.PI / 2, 0, 0]} material={water}>
         <planeGeometry args={[PEAT.x1 - PEAT.x0 - 0.5, PEAT.z1 - PEAT.z0 - 0.5]} />
       </mesh>
-      <mesh position={[30, ex.terrain.water[0], 10]} rotation={[-Math.PI / 2, 0, 0]} material={fieldWater}>
+      <mesh ref={fieldW} position={[30, ex.terrain.water[0], 10]} rotation={[-Math.PI / 2, 0, 0]} material={fieldWater}>
         <planeGeometry args={[100, 140]} />
       </mesh>
       <Beyond tex={grassTex} />

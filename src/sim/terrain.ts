@@ -42,7 +42,7 @@ export const SOIL: SoilProps[] = [
   { name: 'Tanah atas', kc: 55e3, rho: 1.45, swell: 1.25, repose: 36, wall: 55, mu: 0.75, sink: 0.04, sticky: 0.02, color: [0.36, 0.27, 0.18] },
   { name: 'Lempung', kc: 150e3, rho: 1.9, swell: 1.3, repose: 38, wall: 72, mu: 0.7, sink: 0.02, sticky: 0.08, color: [0.62, 0.42, 0.26] },
   { name: 'Pasir', kc: 45e3, rho: 1.7, swell: 1.12, repose: 33, wall: 36, mu: 0.65, sink: 0.05, sticky: 0, color: [0.8, 0.68, 0.46] },
-  { name: 'Gambut basah / lumpur', kc: 25e3, rho: 1.15, swell: 1.05, repose: 14, wall: 22, mu: 0.32, sink: 0.55, sticky: 0.3, color: [0.2, 0.15, 0.1] },
+  { name: 'Gambut basah / lumpur', kc: 25e3, rho: 1.15, swell: 1.05, repose: 14, wall: 22, mu: 0.32, sink: 0.55, sticky: 0.3, color: [0.3, 0.24, 0.16] },
   { name: 'Batu (belum dipecah)', kc: 5e6, rho: 2.6, swell: 1.6, repose: 40, wall: 89, mu: 0.8, sink: 0, sticky: 0, color: [0.52, 0.5, 0.47] },
   { name: 'Batu pecah', kc: 120e3, rho: 1.8, swell: 1.0, repose: 40, wall: 40, mu: 0.8, sink: 0.01, sticky: 0, color: [0.6, 0.57, 0.52] },
   { name: 'Tanah galian', kc: 30e3, rho: 1.5, swell: 1.0, repose: 35, wall: 35, mu: 0.6, sink: 0.08, sticky: 0.05, color: [0.5, 0.36, 0.24] },
@@ -69,6 +69,8 @@ export interface Terrain {
   active: Set<number>;
   /** water table per zone (m) */
   water: number[];
+  /** rain: wet soil slumps at flatter angles */
+  wet: boolean;
 }
 
 export const idx = (i: number, j: number) => j * N + i;
@@ -88,6 +90,7 @@ export function createTerrain(shape: (x: number, z: number) => { h: number; rock
     dirty: [0, 0, N - 1, N - 1],
     active: new Set(),
     water: [-3.2, -9, -0.45, -20],
+    wet: false,
   };
   for (let j = 0; j < N; j++)
     for (let i = 0; i < N; i++) {
@@ -239,7 +242,7 @@ export function relax(t: Terrain, maxCells = 6000) {
     if (soil === Soil.Rock) continue;
     const loose = t.h[k] > t.nat[k] + 0.02;
     const p = SOIL[soil];
-    let deg = loose ? p.repose : p.wall;
+    let deg = (loose ? p.repose : p.wall) - (t.wet ? 7 : 0);
     if (t.load[k]) deg = Math.min(deg, loose ? 26 : 34); // a track's weight at the edge brings the wall down
     const tanA = Math.tan((deg * Math.PI) / 180);
     for (const [di, dj, dd] of NB) {

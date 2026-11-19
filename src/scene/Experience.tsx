@@ -14,6 +14,8 @@ import { Ground } from './Ground';
 import { PC800, excObj } from './PC800';
 import { Site } from './Site';
 import { Trucks } from './Trucks';
+import { Arena, Lowbed, Props, Rain, ToolRack } from './Extras';
+import { Xray } from './Xray';
 
 /** Camera look offsets, changed by mouse drags, the wheel and the gamepad's D-pad. */
 const look = { yaw: 2.5, pitch: 0.35, dist: 26, cabYaw: 0, cabPitch: -0.12 };
@@ -84,6 +86,38 @@ function WorkLights() {
       <primitive object={tgt} />
       <spotLight ref={a} target={tgt} color="#fff1dc" intensity={4000} distance={60} angle={0.7} penumbra={0.6} decay={2} />
     </>
+  );
+}
+
+/** Overcast and darker in the rain (live, no reload). */
+function Weather() {
+  const scene = useThree((s) => s.scene);
+  const base = useMemo(() => ({ bg: new THREE.Color(NIGHT ? '#070c16' : '#bcd3e6'), fog: new THREE.Color(NIGHT ? '#0a111d' : '#c7d4dd') }), []);
+  const wet = useMemo(() => ({ bg: new THREE.Color(NIGHT ? '#05080e' : '#7f8a94'), fog: new THREE.Color(NIGHT ? '#080c14' : '#8b959d') }), []);
+  const k = useRef(0);
+  useFrame((_, dt) => {
+    k.current += ((ex.rain ? 1 : 0) - k.current) * Math.min(1, dt * 0.8);
+    if (scene.background instanceof THREE.Color) scene.background.copy(base.bg).lerp(wet.bg, k.current);
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(base.fog).lerp(wet.fog, k.current);
+      scene.fog.far = 700 - 450 * k.current;
+      scene.fog.near = 140 - 100 * k.current;
+    }
+    scene.traverse((o) => {
+      if ((o as THREE.DirectionalLight).isDirectionalLight) (o as THREE.DirectionalLight).intensity = (NIGHT ? 0.5 : 3.0) * (1 - 0.65 * k.current);
+    });
+  });
+  return null;
+}
+
+/** Sky or stars; hidden under the rain clouds (the fog colour shows instead). */
+function SkyDome() {
+  const rain = useUI(() => ex.rain);
+  if (rain) return null;
+  return NIGHT ? (
+    <Stars radius={700} depth={80} count={2500} factor={5} saturation={0} fade speed={0.3} />
+  ) : (
+    <Sky sunPosition={[40, 26, 25]} turbidity={3.5} rayleigh={0.9} mieCoefficient={0.004} mieDirectionalG={0.8} />
   );
 }
 
@@ -183,11 +217,7 @@ export function Experience() {
     <Canvas shadows dpr={[1, MAX_DPR]} camera={{ position: [30, 20, -30], fov: 50, near: 0.2, far: 1500 }} gl={{ antialias: true }}>
       <color attach="background" args={[NIGHT ? '#070c16' : '#bcd3e6']} />
       <fog attach="fog" args={[NIGHT ? '#0a111d' : '#c7d4dd', 140, 700]} />
-      {NIGHT ? (
-        <Stars radius={700} depth={80} count={2500} factor={5} saturation={0} fade speed={0.3} />
-      ) : (
-        <Sky sunPosition={[40, 26, 25]} turbidity={3.5} rayleigh={0.9} mieCoefficient={0.004} mieDirectionalG={0.8} />
-      )}
+      <SkyDome />
       <hemisphereLight args={NIGHT ? ['#4a5f8c', '#1c1914', 0.6] : ['#dbe9ff', '#6b5f4c', 0.85]} />
       <Sun />
       <Environment resolution={128} frames={1} environmentIntensity={NIGHT ? 0.12 : 0.7}>
@@ -199,7 +229,14 @@ export function Experience() {
       <Ground />
       <Site />
       <Trucks />
+      <ToolRack />
+      <Lowbed />
+      <Props />
+      <Arena />
+      <Rain />
+      <Weather />
       <PC800 />
+      <Xray />
       {NIGHT && <WorkLights />}
       <CameraRig />
       <Driver />
