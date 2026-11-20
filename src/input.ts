@@ -2,6 +2,7 @@
 // travel levers with pedals. Keyboard: W/S A/D = left joystick, I/K J/L = right joystick, Q/Z and E/C = left and
 // right travel levers (arrows drive both together). Gamepad: the two sticks are the two joysticks.
 import { powerMax, startEngine, stopEngine } from './sim/excavator';
+import { EMBED } from './embed';
 import { ensureAudio } from './sound';
 import { ex, useUI, type CamMode } from './store';
 
@@ -53,6 +54,10 @@ export function nextCam() {
 export let horn = false;
 
 function onKey(e: KeyboardEvent) {
+  if (!EMBED.input) {
+    held.clear();
+    return;
+  }
   const tag = (e.target as HTMLElement)?.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   const k = e.key.toLowerCase();
@@ -90,7 +95,7 @@ const ease = (cur: number, want: number, dt: number, rate = 3) => cur + Math.sig
 /** Continuous controls, called every frame. */
 export function applyHeld(dt: number) {
   let gp: Gamepad | null = null;
-  for (const g of navigator.getGamepads?.() ?? []) if (g && g.connected) gp = gp ?? g;
+  if (EMBED.input) for (const g of navigator.getGamepads?.() ?? []) if (g && g.connected) gp = gp ?? g;
   const btn = (i: number) => !!gp?.buttons[i]?.pressed;
   const val = (i: number) => gp?.buttons[i]?.value ?? 0;
   const ax = (i: number) => dz(gp?.axes[i] ?? 0);

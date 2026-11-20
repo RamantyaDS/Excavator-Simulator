@@ -507,12 +507,22 @@ function Result() {
 
 export function App() {
   const started = useUI((s) => s.started);
-  const panel = useUI((s) => s.panel);
   useEffect(() => bindKeys(), []);
   return (
     <>
       <Experience />
       <FpsWarn />
+      <Hud />
+      {!started && <Intro />}
+    </>
+  );
+}
+
+/** Everything on screen over the 3D view; the Traknus World shows this while the player drives the excavator. */
+export function Hud() {
+  const panel = useUI((s) => s.panel);
+  return (
+    <>
       <header className="brand">
         <button className="menu" onClick={() => useUI.getState().set({ panel: !panel })} aria-label={panel ? 'Sembunyikan panel' : 'Tampilkan panel'}>
           {panel ? '◀' : '☰'}
@@ -529,32 +539,35 @@ export function App() {
       <Help />
       <Touch />
       <Result />
-      {!started && (
-        <div className="intro">
-          <div>
-            <h1>Simulator Excavator Traknus</h1>
-            <p>
-              Komatsu PC800-8E0: 74,5 t, mesin 363 kW, boom 8,2 m, arm 3,6 m, bucket 3,1 m³, gaya gali 364 kN. Tanahnya benar-benar bisa digali: lempung, pasir,
-              gambut basah, batu. Bucket terisi sesuai cara menggali, tanah longsor kalau terlalu curam, dan mesin bisa amblas, terangkat atau terguling.
-            </p>
-            <ol>
-              <li>Hidupkan mesin (Enter), turunkan tuas pengunci (P bila terkunci).</li>
-              <li>Joystick kiri W/S A/D, kanan I/K J/L (pola ISO), travel Q/Z dan E/C atau panah.</li>
-              <li>Pilih pekerjaan di tab Misi: isi truk, parit dengan guidance, kanal sawit, pondasi genset.</li>
-            </ol>
-            <p className="dim">Keyboard + mouse, gamepad (dua stik = dua joystick), atau layar sentuh.</p>
-            <button
-              className="big ok"
-              onClick={() => {
-                void ensureAudio();
-                useUI.getState().set({ started: true });
-              }}
-            >
-              Mulai (suara aktif)
-            </button>
-          </div>
-        </div>
-      )}
     </>
+  );
+}
+
+function Intro() {
+  return (
+    <div className="intro">
+      <div>
+        <h1>Simulator Excavator Traknus</h1>
+        <p>
+          Komatsu PC800-8E0: 74,5 t, mesin 363 kW, boom 8,2 m, arm 3,6 m, bucket 3,1 m³, gaya gali 364 kN. Tanahnya benar-benar bisa digali: lempung, pasir,
+          gambut basah, batu. Bucket terisi sesuai cara menggali, tanah longsor kalau terlalu curam, dan mesin bisa amblas, terangkat atau terguling.
+        </p>
+        <ol>
+          <li>Hidupkan mesin (Enter), turunkan tuas pengunci (P bila terkunci).</li>
+          <li>Joystick kiri W/S A/D, kanan I/K J/L (pola ISO), travel Q/Z dan E/C atau panah.</li>
+          <li>Pilih pekerjaan di tab Misi: isi truk, parit dengan guidance, kanal sawit, pondasi genset.</li>
+        </ol>
+        <p className="dim">Keyboard + mouse, gamepad (dua stik = dua joystick), atau layar sentuh.</p>
+        <button
+          className="big ok"
+          onClick={() => {
+            void ensureAudio();
+            useUI.getState().set({ started: true });
+          }}
+        >
+          Mulai (suara aktif)
+        </button>
+      </div>
+    </div>
   );
 }
