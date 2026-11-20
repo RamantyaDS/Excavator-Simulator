@@ -1,5 +1,6 @@
 // Two rigid dump trucks (Komatsu HD465-7 class: 55 t payload, 34.2 m³ heaped) on a loop: queue, back into the bay
 // beside the excavator, wait to be loaded, haul to the dump, tip, return. Loading too much or hitting the cab counts.
+import { hitsSolid } from '../embed';
 import { BAY, DUMP, ROUTE } from './site';
 
 export const TRUCK = {
@@ -80,6 +81,8 @@ export function stepTrucks(trucks: Truck[], dt: number, release: boolean): strin
   const ev: string[] = [];
   const bayBusy = trucks.some((t) => t.state === 'arrive' || t.state === 'wait');
   for (const t of trucks) {
+    // something of the Traknus World (its truck, someone on foot) on the haul road: wait until it is clear
+    if ((t.state === 'arrive' || t.state === 'leave' || t.state === 'return') && hitsSolid({ x: t.x, z: t.z, hx: TRUCK.width / 2, hz: TRUCK.len / 2 + 3, yaw: t.heading, y0: 0, y1: 4.5 })) continue;
     if (t.state === 'queue') {
       if (!bayBusy) {
         t.state = 'arrive';
