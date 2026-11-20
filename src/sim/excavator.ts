@@ -10,6 +10,7 @@
 // Bucket: its edge cuts the cells it sweeps (resistance from the soil), fills by the swell of what it cut, spills when
 // tipped, drops into a truck bed or onto the ground.
 import * as THREE from 'three';
+import { EMBED, hitsSolid } from '../embed';
 import { groundAt } from './colliders';
 import { createProps, stepProps, type Prop, type ToolPoint } from './props';
 import { BREAK_GOAL, CANAL, LOGS, LOG_STACK, LOWBED, POND_GOAL, POWERLINE, QUARRY, RACK, ROAD, RODEO, START, UTILS, design, pitDesign, shape, trenchDesign, type JobId } from './site';
@@ -946,6 +947,12 @@ function body(c: Exc, dt: number) {
   _vp.subVectors(c.p, cg);
   const vo = _tmp.crossVectors(c.w, _vp).add(c.v);
   c.p.addScaledVector(vo, dt);
+  // a solid of the Traknus World (its truck) stops the tracks
+  if (EMBED.solids.length && hitsSolid({ x: c.p.x, z: c.p.z, hx: 2.4, hz: 3.0, yaw: heading(c), y0: c.p.y - 1, y1: c.p.y + 4 })) {
+    c.p.addScaledVector(vo, -dt);
+    c.v.x = 0;
+    c.v.z = 0;
+  }
   const wq = new THREE.Quaternion(c.w.x * dt * 0.5, c.w.y * dt * 0.5, c.w.z * dt * 0.5, 0).multiply(c.q);
   c.q.set(c.q.x + wq.x, c.q.y + wq.y, c.q.z + wq.z, c.q.w + wq.w).normalize();
   const up = new THREE.Vector3(0, 1, 0).applyQuaternion(c.q);
