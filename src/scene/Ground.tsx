@@ -6,12 +6,16 @@
 import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { EMBED } from '../embed';
 import { design, PEAT } from '../sim/site';
 import { CELL, HALF, N, SOIL, idx, surfaceSoil } from '../sim/terrain';
 import { ex, useUI } from '../store';
 import { useCanvasTexture } from './parts';
 
 /** Is this cell still the original grass (undisturbed topsoil of the field)? */
+/** The field's grass brightness; in the Traknus World a little darker and more olive, to meet the world's grass at the edge. */
+const GRASS_TINT = EMBED.on ? 'vec3(0.98, 0.98, 0.78)' : '1.25';
+
 export function isGrass(k: number) {
   const t = ex.terrain;
   return t.zone[k] <= 1 && Math.abs(t.h[k] - t.orig[k]) < 0.03 && t.h[k] <= t.nat[k] + 0.02;
@@ -160,7 +164,7 @@ export function Ground() {
           vec3 g2 = texture2D(grassMap, vWorld / 9.7 + 0.37).rgb;
           float patchy = 0.5 + 0.5 * sin(vWorld.x * 0.11 + sin(vWorld.y * 0.07) * 3.0) * sin(vWorld.y * 0.09);
           vec3 grassC = mix(g1, g2, 0.45) * mix(0.82, 1.18, patchy);
-          diffuseColor.rgb *= mix(soilT.rgb, grassC * 1.25, vGrass);`,
+          diffuseColor.rgb *= mix(soilT.rgb, grassC * ${GRASS_TINT}, vGrass);`,
         );
     };
     return m;
